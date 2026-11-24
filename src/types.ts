@@ -78,4 +78,12 @@ export interface AppData {
   restSeconds: number
   /** 筋肉ごとの週の目標部分セット数（10 から始めて上限 20） */
   weeklyTargets: Partial<Record<Muscle, number>>
+  /** 週目標の見直し（rampWeeklyTargets）を最後に行った週の月曜日 */
+  lastRampWeek?: string
+}
+
+/** 各画面に渡す props */
+export interface ScreenProps {
+  data: AppData
+  setData: (update: (prev: AppData) => AppData) => void
 }

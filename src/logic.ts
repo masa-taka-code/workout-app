@@ -49,6 +49,9 @@ const toDate = (d: string) => new Date(`${d}T00:00:00`)
 const fmt = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
+/** 端末の現地時間での今日 (YYYY-MM-DD) */
+export const localToday = (): string => fmt(new Date())
+
 /** その日を含む週の月曜日 (YYYY-MM-DD) */
 export function weekStart(date: string): string {
   const d = toDate(date)
