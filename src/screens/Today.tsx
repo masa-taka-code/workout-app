@@ -128,6 +128,8 @@ export default function Today({ data, setData }: ScreenProps) {
       alert('未完了のセットがありません。「セット追加」してから反映してください')
       return
     }
+    // 反映の取り消しができるよう、反映前の状態を覚えておく（フォームの解析結果そのものは残す）
+    announceUndo(`${ex.name} ${i + 1}セット目に反映しました`)
     updateSetLog(ex.id, i, { reps: result.reps, formScore: result.formScore })
     toggleDone(ex, entry, i, result.endedAt)
   }

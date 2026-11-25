@@ -404,3 +404,14 @@ export function toSessionSummary(report: FormReport, reps: RepResult[], ctx: For
     avgScore: report.overallScore, stretchScore: report.stretch?.score, faultCounts, confidence: report.confidence,
   }
 }
+
+/**
+ * 計測中のレップの issues（v1 の code）を、レポート・履歴で使う v2 の code にそろえる。
+ * 声かけのフェーディング（shouldCueLive）と履歴の faultCounts の名前を一致させるため。
+ */
+export function toReportCode(key: FormExerciseKey, code: string): string {
+  if (code === 'lean') return 'forward-lean'
+  if (key === 'curl' && code === 'swing') return 'elbow-forward'
+  if (key === 'curl' && code === 'body-english') return 'swing'
+  return code
+}

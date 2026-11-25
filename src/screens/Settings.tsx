@@ -52,6 +52,8 @@ export default function Settings({ data, setData }: ScreenProps) {
 
   const soundOn = data.sound ?? true
   const setSound = (sound: boolean) => setData(prev => ({ ...prev, sound }))
+  const formVoiceOn = data.formVoice ?? true
+  const setFormVoice = (formVoice: boolean) => setData(prev => ({ ...prev, formVoice }))
 
   const setRest = (restSeconds: number) => setData(prev => ({ ...prev, restSeconds }))
 
@@ -211,6 +213,18 @@ export default function Settings({ data, setData }: ScreenProps) {
           <button type="button" className="btn" onClick={playTest}>音を試す</button>
         </div>
         <p className="muted">iPhone では振動しないため、音でお知らせします。マナーモードでは鳴らないことがあります。トレーニング中は画面が自動で消えないようにしています。</p>
+      </div>
+
+      <div className="card">
+        <h2 className="card-title">撮影中の音声</h2>
+        <div className="set-sound">
+          <span className="set-sound-label">声かけ・チャイム・回数の音</span>
+          <div className="seg" role="group" aria-label="撮影中の音声">
+            <button type="button" className="btn" aria-pressed={formVoiceOn} onClick={() => setFormVoice(true)}>オン</button>
+            <button type="button" className="btn" aria-pressed={!formVoiceOn} onClick={() => setFormVoice(false)}>オフ</button>
+          </div>
+        </div>
+        <p className="muted">フォーム撮影中に、開始・終了・フォームの声かけを読み上げます。ジムでは聞こえにくいので、イヤホンの使用をおすすめします。</p>
       </div>
 
       <div className="card">
