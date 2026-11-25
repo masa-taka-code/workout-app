@@ -225,7 +225,9 @@ describe('基準（baseline）', () => {
     const t = new RepTracker('squat')
     const { last } = run(t, squatPath([70]), (f) => squatPose(f.angle, 20))
     const r = last.reps[0]
-    expect(baselineFrom(r)).toEqual({ romDeg: r.romDeg, minAngle: r.minAngle, maxAngle: r.maxAngle })
+    // スクワットは体幹の前傾（計測値）も基準に含める
+    expect(baselineFrom(r)).toEqual({ romDeg: r.romDeg, minAngle: r.minAngle, maxAngle: r.maxAngle, trunkLeanMax: r.metrics?.trunkLeanMax })
+    expect(r.metrics?.trunkLeanMax).toBeTypeOf('number')
   })
   it('reset でレップと状態が消える', () => {
     const t = new RepTracker('squat')
@@ -406,5 +408,14 @@ describe('縦横比の補正', () => {
     expect(toAspectCorrected(pose, 1)).toBe(pose)
     expect(toAspectCorrected(pose, 0)).toBe(pose)
     expect(toAspectCorrected(pose, Number.NaN)).toBe(pose)
+  })
+})
+
+describe('baselineFrom', () => {
+  it('計測値に体幹の前傾があれば基準に含める', () => {
+    const base = { index: 1, score: 100, romDeg: 90, eccentricSec: 2, concentricSec: 1, minAngle: 80, maxAngle: 170, issues: [] }
+    expect(baselineFrom(base)).toEqual({ romDeg: 90, minAngle: 80, maxAngle: 170 })
+    expect(baselineFrom({ ...base, metrics: { confidence: 1, view: 'side', viewOk: 'ok', trunkLeanMax: 42 } }))
+      .toEqual({ romDeg: 90, minAngle: 80, maxAngle: 170, trunkLeanMax: 42 })
   })
 })

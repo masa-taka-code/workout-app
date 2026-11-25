@@ -333,6 +333,8 @@ export function summarizeSet(reps: RepResult[], key?: FormExerciseKey): SetSumma
 
 /** 良いフォームのレップから基準を作る */
 export function baselineFrom(rep: RepResult): Baseline {
-  return { romDeg: rep.romDeg, minAngle: rep.minAngle, maxAngle: rep.maxAngle }
+  const b: Baseline = { romDeg: rep.romDeg, minAngle: rep.minAngle, maxAngle: rep.maxAngle }
+  if (rep.metrics?.trunkLeanMax !== undefined) b.trunkLeanMax = rep.metrics.trunkLeanMax
+  return b
 }
 

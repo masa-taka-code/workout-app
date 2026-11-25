@@ -207,6 +207,13 @@ describe('崩れの検出としきい値', () => {
     expect(codes('squat', one({ trunkLeanMax: 61, kneeFlexionBottom: 120 }))).toEqual(['forward-lean'])
     expect(codes('squat', one({ trunkLeanMax: 60, kneeFlexionBottom: 120 }))).toEqual([])
   })
+  it('squat：基準動画があれば forward-lean は「基準の前傾 +15°」超で判定', () => {
+    const baseline = { romDeg: 100, minAngle: 70, maxAngle: 170, trunkLeanMax: 40 }
+    expect(codes('squat', one({ trunkLeanMax: 56, kneeFlexionBottom: 120 }), { baseline })).toEqual(['forward-lean'])
+    expect(codes('squat', one({ trunkLeanMax: 55, kneeFlexionBottom: 120 }), { baseline })).toEqual([])
+    // 基準に前傾の値が無ければ従来どおり 60° 超
+    expect(codes('squat', one({ trunkLeanMax: 56, kneeFlexionBottom: 120 }), { baseline: { romDeg: 100, minAngle: 70, maxAngle: 170 } })).toEqual([])
+  })
   it('squat：heel-lift は 0.03 超', () => {
     expect(codes('squat', one({ heelLift: 0.031, kneeFlexionBottom: 120 }))).toEqual(['heel-lift'])
     expect(codes('squat', one({ heelLift: 0.03, kneeFlexionBottom: 120 }))).toEqual([])
@@ -324,7 +331,7 @@ describe('trend（前回との比較）', () => {
   it('崩れの回数の変化「3→1」', () => {
     const reps = [rep(1, {}, { kneeFlexionBottom: 120, trunkLeanMax: 70 })]
     const r = analyzeSet(reps, ctx('squat', { history: [summary({ faultCounts: { 'forward-lean': 3 } })] }))
-    expect(r.trend).toContain('上体の前傾が大きいの回数 3→1')
+    expect(r.trend).toContain('上体の前傾が大きい：3回→1回')
   })
   it('差が小さければ「ほぼ同じ」、履歴が無ければ undefined', () => {
     expect(analyzeSet(full, ctx('squat', { history: [summary({ stretchScore: 99 })] })).trend).toBe('前回とほぼ同じです。')

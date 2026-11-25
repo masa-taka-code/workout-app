@@ -42,6 +42,7 @@ const SHOULDER_NOTE_DEG = 10
 const TH = {
   /** 上体の前傾（度）。本人基準の +15° は Baseline に体幹の値が無いため未対応 */
   trunkLean: 60,
+  trunkLeanOverBaseline: 15,
   heelLift: 0.03,
   kneeValgus: 10,
   hipRise: 0.05,
@@ -175,7 +176,9 @@ function detectFaults(r: RepResult, ctx: FormContext): Flag[] {
 
   if (ctx.key === 'squat') {
     const lean = m?.trunkLeanMax
-    if (lean !== undefined) { if (lean > TH.trunkLean) add('forward-lean', (lean - TH.trunkLean) / TH.trunkLean) }
+    // 本人の基準動画があれば「基準 +15°」、無ければ 60° 超（どちらも暫定）
+    const leanLimit = ctx.baseline?.trunkLeanMax !== undefined ? ctx.baseline.trunkLeanMax + TH.trunkLeanOverBaseline : TH.trunkLean
+    if (lean !== undefined) { if (lean > leanLimit) add('forward-lean', (lean - leanLimit) / leanLimit) }
     else if (v1.has('lean')) add('forward-lean')
 
     if (m?.heelLift !== undefined && m.heelLift > TH.heelLift) add('heel-lift', (m.heelLift - TH.heelLift) / TH.heelLift)
@@ -294,7 +297,7 @@ function trendOf(report: Pick<FormReport, 'stretch' | 'faults'>, ctx: FormContex
     const to = now[code] ?? 0
     if (from !== to && (!best || Math.abs(to - from) > Math.abs(best.to - best.from))) best = { code, from, to }
   }
-  if (best) parts.push(`${adviceFor(ctx.key, best.code).label}の回数 ${best.from}→${best.to}`)
+  if (best) parts.push(`${adviceFor(ctx.key, best.code).label}：${best.from}回→${best.to}回`)
   return parts.length ? `前回との比較：${parts.join('、')}。` : '前回とほぼ同じです。'
 }
 

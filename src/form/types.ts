@@ -80,6 +80,8 @@ export interface Baseline {
   romDeg: number
   minAngle: number
   maxAngle: number
+  /** 基準レップの体幹の前傾の最大（squat のみ。forward-lean を本人基準 +15° で判定するため） */
+  trunkLeanMax?: number
 }
 
 export interface SetSummary {

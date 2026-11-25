@@ -130,7 +130,7 @@ export interface AppData {
   /** トレーニングの予定（曜日と時刻） */
   schedule?: Schedule
   /** 動画フォーム採点の基準（自分の良いフォームの可動域）。種目キーごと */
-  formBaselines?: Partial<Record<string, { romDeg: number; minAngle: number; maxAngle: number; savedAt: string }>>
+  formBaselines?: Partial<Record<string, { romDeg: number; minAngle: number; maxAngle: number; trunkLeanMax?: number; savedAt: string }>>
   /** フォーム解析の要約の履歴（新しい順、最大 200 件）。原因判定の手がかりに使う */
   formSessions?: import('./form/types').FormSessionSummary[]
   /** 帰宅後に読むための詳細レポート（新しい順、最大 20 件） */
