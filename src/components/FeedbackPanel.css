@@ -1,0 +1,14 @@
+.feedback {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.feedback-title { font-size: 0.875rem; font-weight: 600; }
+.feedback-row { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.feedback-btn { min-height: 44px; min-width: 0; font-size: 0.875rem; }
+.feedback-warn { color: var(--warn); }
