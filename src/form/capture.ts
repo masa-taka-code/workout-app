@@ -90,7 +90,8 @@ export interface LiveCue {
  * セット中の声かけを決める。
  * - 直近 2 レップに同じ崩れが続いたときだけ（1 レップだけの崩れは推定の誤差かもしれない）
  * - 速度低下が 30% を超えたあとは、安全に関わる崩れだけ
- * - shouldCueLive が false の崩れは言わない
+ * - 安全に関わる崩れ（SAFETY_CODES）は、shouldCueLive に関係なく言う
+ * - shouldCueLive が false の崩れ（直近 3 回で 0 回）は、同じ崩れが 3 レップ続いたときだけ言う
  * - 声にする文が決まっていない崩れは言わない
  * history は新しい順。
  */
@@ -102,6 +103,8 @@ export function pickLiveCue(
   const prev = reps[reps.length - 2]
   // v1 の code を v2 にそろえてから判定する（履歴の faultCounts は v2 の名前）
   const prevCodes = new Set(prev.issues.map(i => toReportCode(key, i.code)))
+  const prev2 = reps.length >= 3 ? reps[reps.length - 3] : undefined
+  const prev2Codes = new Set(prev2?.issues.map(i => toReportCode(key, i.code)) ?? [])
   let codes = last.issues.map(i => toReportCode(key, i.code)).filter(c => prevCodes.has(c))
   if ((last.metrics?.velocityLossPct ?? 0) > FATIGUE_LOSS_PCT) {
     codes = codes.filter(c => SAFETY_CODES.includes(c))
@@ -109,7 +112,8 @@ export function pickLiveCue(
   // 安全に関わるものを先に
   codes.sort((a, b) => Number(SAFETY_CODES.includes(b)) - Number(SAFETY_CODES.includes(a)))
   for (const code of codes) {
-    if (!shouldCueLive(code, history)) continue
+    // 安全に関わる崩れは常に言う。フェーディング中の崩れは 3 レップ続いたときだけ
+    if (!SAFETY_CODES.includes(code) && !shouldCueLive(code, history) && !prev2Codes.has(code)) continue
     const voice = cueVoiceText(key, code)
     if (!voice) continue
     return { code, voice, screen: adviceFor(key, code).cue || voice }

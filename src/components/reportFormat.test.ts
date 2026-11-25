@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { FaultFinding, RepResult } from '../form/types'
 import {
   barWidth, bestRep, conditionWord, confidenceDots, groupFaults, isReferenceRep,
-  onlyLowConfidence, pctText, repsText, roundShare, shareText,
+  levelIndex, onlyLowConfidence, pctText, repsText, roundShare, shareText,
 } from './reportFormat'
 
 const fault = (code: string, reps: number[], conf: 'high' | 'mid' | 'low' = 'mid'): FaultFinding => ({
@@ -33,6 +33,11 @@ describe('reportFormat', () => {
     expect(roundShare(1.2)).toBe(100)
     expect(roundShare(-1)).toBe(0)
     expect(shareText(0.58)).toBe('約60%')
+  })
+  it('負荷配分の段階の位置（膝優位 0 〜 股関節優位 3、段階でなければ -1）', () => {
+    expect(['膝優位', 'やや膝寄り', 'やや股関節寄り', '股関節優位'].map(levelIndex)).toEqual([0, 1, 2, 3])
+    expect(levelIndex(undefined)).toBe(-1)
+    expect(levelIndex('中立')).toBe(-1)
   })
   it('レップ番号の表記', () => {
     expect(repsText([5, 3, 4])).toBe('3・4・5回目')

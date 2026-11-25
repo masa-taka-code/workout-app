@@ -27,7 +27,11 @@ interface Clue {
 const HEAVY_RATIO = 0.95
 /** 軽い重量とみなす：今回の重量の何倍未満か */
 const LIGHT_RATIO = 0.9
-/** 疲労の手がかり：後半の速度低下がこれ（%）を超えたら強い */
+/**
+ * 疲労の手がかり：後半の速度低下がこれ（%）を超えたら「中」。
+ * 姿勢推定の速度は未検証なので、速度低下だけでは「高」にしない（疲労の確信度は最大 mid）。
+ * 参考：全力の速さで限界まで行うと、上げる速度は −59〜−63%、下ろす速度も −26〜−36% 低下した（Tsoukos 2023）。
+ */
 const FATIGUE_LOSS_HIGH = 20
 /** 同：これを超えたら中 */
 const FATIGUE_LOSS_MID = 10
@@ -41,6 +45,19 @@ const MIN_REPS_FOR_TIMING = 3
 const ORDER: CauseKind[] = ['fatigue', 'load', 'mobility', 'technique', 'strength', 'structure']
 const LEVEL: Record<number, Confidence> = { 1: 'low', 2: 'mid', 3: 'high' }
 const RANK: Record<Confidence, number> = { high: 3, mid: 2, low: 1 }
+
+/**
+ * 確信度の上限（根拠が弱い原因は、手がかりが重なっても上限を超えない）。
+ *  - 疲労：姿勢推定の速度は未検証
+ *  - 膝の内倒れ：2D の投影角は 3D の外反とほとんど一致しない（R² 0〜64%）
+ *  - 基準動画が無いときの squat の浅さ：しきい値に姿勢推定の誤差（約12°）があり、深い屈曲は小さめに出やすい（Leuthold 2025）
+ */
+function confidenceCap(cause: CauseKind, code: string, ctx: FormContext): Confidence {
+  if (cause === 'fatigue') return 'mid'
+  if (code === 'knee-valgus') return 'mid'
+  if (code === 'shallow' && ctx.key === 'squat' && !(ctx.baseline && ctx.baseline.romDeg > 0)) return 'low'
+  return 'high'
+}
 
 function rate(counts: Record<string, number>, reps: number, code: string): number {
   return (counts[code] ?? 0) / Math.max(1, reps)
@@ -87,7 +104,7 @@ export function inferCauses(
       const loss = losses.length ? Math.max(...losses) : undefined
       const natural = code === 'bar-drift' ? '（疲労による自然な変化のこともあります：Duffey 2007）' : ''
       if (loss !== undefined && loss > FATIGUE_LOSS_HIGH) {
-        add('fatigue', 3, `最後の3分の1だけで出ていて、バー速度も落ちている${natural}`)
+        add('fatigue', 2, `最後の3分の1だけで出ていて、速度も落ちている（姿勢推定の速度なので参考）${natural}`)
         add('strength', 1, '後半の速度が落ちた区間だけで出ている')
       } else if (loss !== undefined && loss > FATIGUE_LOSS_MID) {
         add('fatigue', 2, `最後の3分の1だけで出ていて、速度が少し落ちている${natural}`)
@@ -136,7 +153,7 @@ export function inferCauses(
   for (const [cause, list] of clues) {
     if (allowed && !allowed.includes(cause)) continue
     const max = Math.max(...list.map(c => c.strength))
-    const level = Math.min(3, max + (list.length >= 2 ? 1 : 0))
+    const level = Math.min(3, max + (list.length >= 2 ? 1 : 0), RANK[confidenceCap(cause, code, ctx)])
     const texts = [...new Set(list.map(c => c.text))]
     out.push({
       cause,

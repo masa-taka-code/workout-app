@@ -27,9 +27,10 @@ describe('inferCauses：セット内のタイミング', () => {
     expect(cs[0].reason).toContain('1〜2レップ目から出ている')
   })
 
-  it('後半（最後の3分の1）だけ＋速度低下 20% 超：fatigue は high、strength は low', () => {
+  it('後半（最後の3分の1）だけ＋速度低下 20% 超：fatigue は最大でも mid（姿勢推定の速度は未検証）、strength は low', () => {
     const cs = inferCauses('shallow', [5, 6], usable(6, [0, 0, 0, 0, 25, 30]), ctx(), [])
-    expect(cs[0]).toMatchObject({ cause: 'fatigue', confidence: 'high' })
+    expect(cs[0]).toMatchObject({ cause: 'fatigue', confidence: 'mid' })
+    expect(cs.every(c => c.confidence !== 'high')).toBe(true)
     expect(find(cs, 'strength')?.confidence).toBe('low')
     expect(find(cs, 'mobility')).toBeUndefined()
   })
@@ -140,5 +141,33 @@ describe('inferCauses：手がかりの重なりと組み合わせ', () => {
   it('候補は最大3件', () => {
     const cs = inferCauses('shallow', [1, 2], usable(6), ctx({ weight: 100, history: [hist(100, 3, 5, 'shallow'), hist(100, 3, 5, 'shallow')] }), [])
     expect(cs.length).toBeLessThanOrEqual(3)
+  })
+})
+
+describe('inferCauses：確信度の上限', () => {
+  it('疲労は、手がかりが重なっても high にならない（後半だけ ＋ 速度低下 ＋ 改善中の推移でも mid まで）', () => {
+    const c = ctx({ history: [hist(100, 1), hist(100, 2), hist(100, 4)] })
+    const cs = inferCauses('forward-lean', [5, 6], usable(6, [0, 0, 0, 0, 25, 30]), c, [])
+    expect(find(cs, 'fatigue')?.confidence).toBe('mid')
+  })
+
+  it('knee-valgus の原因は、手がかりが重なっても最大 mid', () => {
+    // 1〜2レップ目から ＋ 練習で改善中：forward-lean なら technique が high になる組み合わせ
+    const c = ctx({ history: [hist(100, 1, 5, 'knee-valgus'), hist(100, 2, 5, 'knee-valgus'), hist(100, 4, 5, 'knee-valgus')] })
+    const cs = inferCauses('knee-valgus', [1], usable(5), c, [])
+    expect(cs[0]).toMatchObject({ cause: 'technique', confidence: 'mid' })
+    expect(cs.every(x => x.confidence !== 'high')).toBe(true)
+  })
+
+  it('基準動画が無いときの squat の shallow は最大 low、基準動画があれば従来どおり', () => {
+    const c = ctx({ history: [hist(100, 1, 5, 'shallow'), hist(100, 2, 5, 'shallow'), hist(100, 4, 5, 'shallow')] })
+    const noBase = inferCauses('shallow', [1], usable(5), c, [])
+    expect(noBase.length).toBeGreaterThan(0)
+    expect(noBase.every(x => x.confidence === 'low')).toBe(true)
+    const withBase = inferCauses('shallow', [1], usable(5), { ...c, baseline: { romDeg: 100, minAngle: 70, maxAngle: 170 } }, [])
+    expect(withBase[0]).toMatchObject({ cause: 'technique', confidence: 'high' })
+    // bench の shallow は対象外
+    const bench = inferCauses('shallow', [1], usable(5), { ...c, key: 'bench' }, [])
+    expect(bench[0].confidence).toBe('high')
   })
 })

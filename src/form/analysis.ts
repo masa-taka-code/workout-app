@@ -16,6 +16,8 @@ const MIN_CONFIDENCE = 0.6
 // ---- ストレッチ（B-1） ----
 /** squat：膝屈曲の基準（Kubo 2019 のハーフ 90° / フル 140°） */
 const SQUAT_SHALLOW_DEG = 90
+/** 基準動画が無いときの「浅い」：90° から姿勢推定の角度誤差（約12°、Leuthold 2025）を引いた値。深い屈曲は小さめに出やすい */
+const SQUAT_SHALLOW_NO_BASELINE_DEG = 78
 const SQUAT_DEEP_DEG = 140
 /** curl：伸張域の入口の肘の内角 112°（屈曲 68°：Pedrosa 2023）から 170° まで */
 const CURL_STRETCH_START_DEG = 112
@@ -28,20 +30,33 @@ const W_CONSISTENCY = 0.3
 const W_TIME = 0.2
 
 // ---- 効き具合（B-2） ----
-/** 効き具合スコアの重み（根拠のない仮の値）：限界への近さ 0.6・ストレッチ 0.4 */
+/** 効き具合スコアの重み（根拠のない仮の値）：筋肥大向けの速度低下への到達 0.6・ストレッチ 0.4 */
 const W_PROXIMITY = 0.6
 const W_STRETCH = 0.4
-/** 限界への近さ：速度低下がこの値（%）で 1（Pareja-Blanco 2017） */
-const PROXIMITY_FULL_LOSS = 40
-/** Barrack 2021：すね前傾 − 体幹前傾 がこの値（度）以上なら膝寄りの負荷 */
-const BARRACK_DIFF_DEG = 8
+/**
+ * 筋肥大向けの目安の速度低下（%）。これ以上で proximity = 1。
+ * 根拠：Hickmott 2022（系統的レビュー）で、速度低下 >25% のほうが ≤25% より筋肥大が大きかった。
+ * 「限界への近さ」ではない（Pareja-Blanco 2017 の 40% も限界という意味ではない）。squat と bench だけに使う。
+ */
+const HYPERTROPHY_LOSS_TARGET = 25
+/**
+ * スクワットの負荷配分（股関節 / 膝）：HKR = h / (1 − h)（h = hipMomentShare）。
+ * Straub, Barrack ら 2025 の4つの型の平均 HKR（0.3 / 0.9 / 1.5 / 2.2）の中間点（0.6 / 1.2 / 1.85）で区切った暫定値。
+ * 論文は3D・しゃがむ局面全体の平均で、アプリは2D・最下点の近似なので、段階の名前だけを出す。
+ */
+const HKR_CUTS = [0.6, 1.2, 1.85]
+const HKR_REPRESENTATIVE = [0.3, 0.9, 1.5, 2.2]
+export const HIP_KNEE_LEVELS = ['膝優位', 'やや膝寄り', 'やや股関節寄り', '股関節優位'] as const
+/** Straub, Barrack ら 2025：体幹の前傾がすねの前傾をこの値（度）以上上回ると股関節寄り（最大膝屈曲時） */
+const STRAUB_DIFF_DEG = 2.2
 /** curl：肩の角度の注記を出す境界（度、暫定） */
 const SHOULDER_NOTE_DEG = 10
 
 // ---- 崩れの検出しきい値（すべて暫定。研究で確かめられた値ではない） ----
 const TH = {
   /** 上体の前傾（度）。本人基準の +15° は Baseline に体幹の値が無いため未対応 */
-  trunkLean: 60,
+  /** 基準動画が無いときの上体の前傾：60° に姿勢推定の角度誤差（約12°、Leuthold 2025）の余裕を足した値 */
+  trunkLeanNoBaseline: 72,
   trunkLeanOverBaseline: 15,
   heelLift: 0.03,
   kneeValgus: 10,
@@ -74,16 +89,19 @@ const TARGETS: Record<FormExerciseKey, EmphasisTarget[]> = {
 
 /** 狙いの部位ごとのコツ（根拠つき） */
 const TIPS: Record<string, string[]> = {
-  quads: ['上体をより起こし、膝を前に出す（かかと台も有効。すねが体幹より前傾すると膝寄りの負荷：Barrack 2021）', '深さを保つ'],
+  quads: ['上体をより起こし、膝を前に出す（かかと台も有効。すねの前傾が体幹より大きいと膝寄りの姿勢：Straub, Barrack ら 2025）', '深さを保つ'],
   hips: [
     '股関節から折りたたむ（お尻を後ろへ）',
-    '足幅を広めに（Paoli 2009）',
+    '足幅を広めに（大臀筋の筋電が高かった研究：Paoli 2009。筋肥大は未検証）',
     '深くしゃがむほど臀筋・内転筋の肥大が大きい（Kubo 2019）',
   ],
-  chest: ['胸に触れるまで下ろす（フル可動域で大胸筋の肥大が大きい：Mendonça 2021）', '握りを広めにする'],
+  chest: ['胸に軽く触れるまで下ろし、毎回同じ深さにそろえる（深さをそろえると記録を比べやすい。可動域の違いによる長期の効果は研究で一貫しない）', '握りを広めにする'],
   triceps: ['握りを狭め、肘を体に近づける（研究により結果は一貫しません）'],
-  long: ['インクラインベンチで上腕を体の後ろに（長頭が伸びやすい：Nunes 2025）'],
-  distal: ['下で伸ばしきる（Pedrosa 2023）', 'プリーチャーカール（肘側が伸びやすい：Nunes 2025）'],
+  long: ['インクラインベンチで上腕を体の後ろに（肩側の筋厚の増加が大きかった：Kassiano ら 2025、女性63人・8週）'],
+  distal: [
+    '下で伸ばしきる（座位のプリーチャーカールで、伸ばしきる側の可動域のとき肘側の筋厚が大きく増えた研究：Pedrosa 2023）',
+    'プリーチャーカール（肘側の筋厚の増加が大きかった：Kassiano ら 2025、女性63人・8週）',
+  ],
 }
 
 /** 種目ごとの「効かせたい部位」の選択肢 */
@@ -176,8 +194,8 @@ function detectFaults(r: RepResult, ctx: FormContext): Flag[] {
 
   if (ctx.key === 'squat') {
     const lean = m?.trunkLeanMax
-    // 本人の基準動画があれば「基準 +15°」、無ければ 60° 超（どちらも暫定）
-    const leanLimit = ctx.baseline?.trunkLeanMax !== undefined ? ctx.baseline.trunkLeanMax + TH.trunkLeanOverBaseline : TH.trunkLean
+    // 本人の基準動画があれば「基準 +15°」、無ければ 72° 超（誤差の余裕を含む。どちらも暫定）
+    const leanLimit = ctx.baseline?.trunkLeanMax !== undefined ? ctx.baseline.trunkLeanMax + TH.trunkLeanOverBaseline : TH.trunkLeanNoBaseline
     if (lean !== undefined) { if (lean > leanLimit) add('forward-lean', (lean - leanLimit) / leanLimit) }
     else if (v1.has('lean')) add('forward-lean')
 
@@ -185,10 +203,13 @@ function detectFaults(r: RepResult, ctx: FormContext): Flag[] {
 
     const flex = m?.kneeFlexionBottom
     if (baselineD !== undefined) { if (baselineD < REACH_OK) add('shallow', REACH_OK - baselineD) }
-    else if (flex !== undefined) { if (flex < SQUAT_SHALLOW_DEG) add('shallow', (SQUAT_SHALLOW_DEG - flex) / SQUAT_SHALLOW_DEG) }
+    else if (flex !== undefined) {
+      if (flex < SQUAT_SHALLOW_NO_BASELINE_DEG) add('shallow', (SQUAT_SHALLOW_NO_BASELINE_DEG - flex) / SQUAT_SHALLOW_NO_BASELINE_DEG)
+    }
     else if (v1.has('shallow')) add('shallow')
 
-    if (m?.view === 'front' && m.kneeValgusDeg !== undefined && m.kneeValgusDeg > TH.kneeValgus) {
+    // 正面で撮れているときだけ（向きが15°ずれると結果が逆になりうる）。2D の見かけの値で 3D の外反ではない
+    if (m?.view === 'front' && m.viewOk === 'ok' && m.kneeValgusDeg !== undefined && m.kneeValgusDeg > TH.kneeValgus) {
       add('knee-valgus', (m.kneeValgusDeg - TH.kneeValgus) / TH.kneeValgus)
     }
   } else if (ctx.key === 'bench') {
@@ -233,25 +254,40 @@ function detectAll(usable: RepResult[], ctx: FormContext): Detected[] {
 
 // ---- 効き具合 ----
 
-function emphasisOf(usable: RepResult[], ctx: FormContext): { distribution: EmphasisShare[]; note: string; hip?: number } {
+/** hipMomentShare（h、0〜1）から負荷配分の段階を決める。share は段階の代表値（HKR → h = HKR / (1 + HKR)） */
+export function hipKneeLevel(h: number): { level: string; hkr: number; share: number } {
+  const hkr = h >= 1 ? Infinity : h / (1 - h)
+  let i = HKR_CUTS.findIndex(c => hkr < c - 1e-9) // 境界ちょうどは上の段階（浮動小数点の誤差を吸収）
+  if (i < 0) i = HKR_CUTS.length
+  const rep = HKR_REPRESENTATIVE[i]
+  return { level: HIP_KNEE_LEVELS[i], hkr, share: rep / (1 + rep) }
+}
+
+function emphasisOf(
+  usable: RepResult[], ctx: FormContext,
+): { distribution: EmphasisShare[]; note: string; hip?: number; level?: string } {
   const avg = (pick: (r: RepResult) => number | undefined): number | undefined => {
     const xs = usable.map(pick).filter((v): v is number => v !== undefined)
     return xs.length ? mean(xs) : undefined
   }
   if (ctx.key === 'squat') {
     const h = avg(r => r.metrics?.hipMomentShare)
-    const hc = h === undefined ? undefined : clamp01(h)
+    const lv = h === undefined ? undefined : hipKneeLevel(clamp01(h))
+    const hip = lv?.share
     const dist: EmphasisShare[] = [
-      { label: '股関節まわり（臀筋・内転筋）', muscles: ['臀筋'], share: hc },
-      { label: '太もも前（大腿四頭筋）', muscles: ['大腿四頭筋'], share: hc === undefined ? undefined : 1 - hc },
+      { label: '股関節まわり（臀筋・内転筋）', muscles: ['臀筋'], share: hip },
+      { label: '太もも前（大腿四頭筋）', muscles: ['大腿四頭筋'], share: hip === undefined ? undefined : 1 - hip },
     ]
-    let note = '姿勢から推定した負荷の割合です（筋電図ではありません）。'
+    let note = '姿勢から推定した負荷の配分の段階です（筋電図ではありません）。'
     const shin = avg(r => r.metrics?.shinLeanBottom)
-    const trunk = avg(r => r.metrics?.trunkLeanMax)
-    if (shin !== undefined && trunk !== undefined && shin - trunk >= BARRACK_DIFF_DEG) {
-      note += '膝寄りの負荷（すねが体幹より前傾）の可能性があります（Barrack 2021）。'
+    const trunk = avg(r => r.metrics?.trunkLeanBottom)
+    if (shin !== undefined && trunk !== undefined) {
+      note += trunk - shin >= STRAUB_DIFF_DEG - 1e-9
+        ? '最下点は股関節寄りの姿勢です（Straub, Barrack ら 2025）。'
+        : '最下点は膝寄りの姿勢です。'
     }
-    return { distribution: dist, note, hip: hc }
+    note += '論文は3D・しゃがむ局面全体の平均、アプリは2D・最下点の近似です。'
+    return { distribution: dist, note, hip, level: lv?.level }
   }
   if (ctx.key === 'bench') {
     return {
@@ -265,9 +301,9 @@ function emphasisOf(usable: RepResult[], ctx: FormContext): { distribution: Emph
   let note = '力こぶの中の割合は出せません。'
   const sh = avg(r => r.metrics?.shoulderAngleAtBottom)
   if (sh !== undefined && sh < -SHOULDER_NOTE_DEG) {
-    note += '肩が伸びた位置（インクライン）：二頭筋の長頭・肩側が伸びやすい姿勢です（Nunes 2025）。'
+    note += '肩が伸びた位置（インクライン）です。女性63人・8週の研究では、インクラインで肩側（近位）の筋厚の増加が大きかった（Kassiano ら 2025）。負荷のかかり方をそろえると差がないという研究もあります（Attarieh 2025）。'
   } else if (sh !== undefined && sh > SHOULDER_NOTE_DEG) {
-    note += '肩が曲がった位置（プリーチャー）：肘側が伸びやすい姿勢です（Nunes 2025）。'
+    note += '肩が曲がった位置（プリーチャー）です。女性63人・8週の研究では、プリーチャーで肘側（遠位）の筋厚の増加が大きかった（Kassiano ら 2025）。負荷のかかり方をそろえると差がないという研究もあります（Attarieh 2025）。'
   }
   return { distribution: [{ label: '力こぶ（上腕二頭筋）', muscles: ['上腕二頭筋'] }], note }
 }
@@ -334,10 +370,11 @@ export function analyzeSet(reps: RepResult[], ctx: FormContext): FormReport {
   // 効き具合
   const emp = emphasisOf(usable, ctx)
   const losses = usable.map(r => r.metrics?.velocityLossPct).filter((v): v is number => v !== undefined)
-  const effort: FormReport['effort'] = losses.length
+  // 筋肥大向けの目安（速度低下 25% 以上、Hickmott 2022）は squat と bench だけ。curl は出さない
+  const effort: FormReport['effort'] = losses.length && ctx.key !== 'curl'
     ? {
         velocityLossPct: Math.max(...losses),
-        proximity: clamp01(Math.max(...losses) / PROXIMITY_FULL_LOSS),
+        proximity: clamp01(Math.max(...losses) / HYPERTROPHY_LOSS_TARGET),
         source: 'velocity',
       }
     : { source: 'none' }
@@ -385,7 +422,7 @@ export function analyzeSet(reps: RepResult[], ctx: FormContext): FormReport {
   const report: FormReport = {
     overallScore, confidence, view, viewOk,
     stretch,
-    emphasis: { distribution: emp.distribution, target, note: emp.note },
+    emphasis: { distribution: emp.distribution, level: emp.level, target, note: emp.note },
     effort,
     faults,
     primaryCue,

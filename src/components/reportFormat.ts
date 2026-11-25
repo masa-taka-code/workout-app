@@ -1,3 +1,4 @@
+import { HIP_KNEE_LEVELS } from '../form/analysis'
 import type { Confidence, FaultFinding, RepResult } from '../form/types'
 
 /** 確信度の点と言葉（色では示さない）。例「●●○ 中」 */
@@ -28,6 +29,11 @@ export function roundShare(share: number): number {
 /** 「約60%」 */
 export function shareText(share: number): string {
   return `約${roundShare(share)}%`
+}
+
+/** 負荷配分の段階（膝優位〜股関節優位）の位置 0〜3。段階の名前でなければ -1 */
+export function levelIndex(level: string | undefined): number {
+  return (HIP_KNEE_LEVELS as readonly string[]).indexOf(level ?? '')
 }
 
 /** 「3・4・5回目」 */

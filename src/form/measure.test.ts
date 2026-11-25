@@ -296,6 +296,7 @@ describe('squat の指標', () => {
     expect(x.kneeFlexionBottom).toBeCloseTo(110, 0)
     expect(x.trunkLeanMax).toBeCloseTo(20, 0)
     expect(x.shinLeanBottom).toBeCloseTo(0, 0)
+    expect(x.trunkLeanBottom).toBeCloseTo(20, 0)
     expect(x.hipMomentShare).toBeCloseTo(0.45, 2)
     expect(x.heelLift).toBe(0)
     expect(x.kneeValgusDeg).toBeUndefined() // 正面ではない
@@ -306,6 +307,9 @@ describe('squat の指標', () => {
   it('体幹の前傾はレップ中の最大（20° → 50° と増えれば 50°）', () => {
     const x = one((f) => squatPose(f.angle, 20 + 30 * f.progress))
     expect(x.trunkLeanMax).toBeCloseTo(50, 0)
+    // 最下点の前傾（trunkLeanBottom）は、最も曲がったフレームの値
+    expect(x.trunkLeanBottom).toBeGreaterThan(40)
+    expect(x.trunkLeanBottom).toBeLessThanOrEqual(x.trunkLeanMax as number)
   })
 
   it('すねが 10° 前傾していれば shinLeanBottom は 10°、膝屈曲は変わらず 110°', () => {

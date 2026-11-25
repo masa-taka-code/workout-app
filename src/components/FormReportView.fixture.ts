@@ -42,16 +42,17 @@ export const fixtureReport: FormReport = {
   },
   emphasis: {
     distribution: [
-      { label: '股関節まわり', muscles: ['臀筋', 'ハムストリング'], share: 0.58 },
-      { label: '太もも前', muscles: ['大腿四頭筋'], share: 0.42 },
+      { label: '股関節まわり', muscles: ['臀筋', 'ハムストリング'], share: 0.6 },
+      { label: '太もも前', muscles: ['大腿四頭筋'], share: 0.4 },
     ],
+    level: 'やや股関節寄り',
     target: {
-      id: 'glute', label: 'お尻・内もも', share: 0.58, score: 72,
+      id: 'glute', label: 'お尻・内もも', share: 0.6, score: 72,
       tips: ['しゃがむとき、お尻を後ろに引く意識を持つ', '足幅をやや広げ、つま先を少し外に向ける'],
     },
     note: '体の向きと関節の角度からの推定です。筋電図ではありません。',
   },
-  effort: { velocityLossPct: 38, proximity: 0.95, source: 'velocity' },
+  effort: { velocityLossPct: 38, proximity: 1, source: 'velocity' },
   faults: [
     {
       code: 'trunk-lean', label: '上体の前傾が大きい', reps: [4, 5, 6],
@@ -74,7 +75,7 @@ export const fixtureReport: FormReport = {
       muscleHint: 'ふくらはぎ（根拠：弱）',
     },
     {
-      code: 'knee-valgus', label: '膝が内側に入る', reps: [],
+      code: 'knee-valgus', label: '膝が内側に入って見える', reps: [],
       causes: [], cue: '膝を外へ開く', drills: [],
     },
     {

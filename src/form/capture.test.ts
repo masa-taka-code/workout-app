@@ -176,6 +176,26 @@ describe('セット中の声かけ', () => {
     expect(pickLiveCue('squat', [rep(1, ['forward-lean']), rep(2, ['forward-lean'])], [h(3), h(2), h(1)])).toBeUndefined()
   })
 
+  it('安全に関わる崩れ（knee-valgus・hip-rise）は、shouldCueLive が false でも 2 レップ続けば言う', () => {
+    const h = { date: '2026-11-20', exerciseId: 'e', key: 'squat' as const, weight: 60, reps: 5, avgScore: 90, faultCounts: {}, confidence: 1 }
+    const cue = pickLiveCue('squat', [rep(1, ['knee-valgus']), rep(2, ['knee-valgus'])], [h, h, h])
+    expect(cue?.code).toBe('knee-valgus')
+    expect(pickLiveCue('squat', [rep(1, ['knee-valgus'])], [h, h, h])).toBeUndefined() // 1 レップだけでは言わない
+    expect(pickLiveCue('bench', [rep(1, ['hip-rise']), rep(2, ['hip-rise'])], [{ ...h, key: 'bench' }, { ...h, key: 'bench' }, { ...h, key: 'bench' }])?.code).toBe('hip-rise')
+  })
+
+  it('shouldCueLive が false の崩れは、同じ崩れが 3 レップ続いたら言う（2 レップでは言わない）', () => {
+    const h = { date: '2026-11-20', exerciseId: 'e', key: 'squat' as const, weight: 60, reps: 5, avgScore: 90, faultCounts: {}, confidence: 1 }
+    const hist = [h, h, h]
+    expect(pickLiveCue('squat', [rep(1, ['forward-lean']), rep(2, ['forward-lean'])], hist)).toBeUndefined()
+    expect(pickLiveCue('squat', [rep(1, ['forward-lean']), rep(2, ['forward-lean']), rep(3, ['forward-lean'])], hist)?.code).toBe('forward-lean')
+    // 3 レップのうち最初が違えば、連続 2 レップなので言わない
+    expect(pickLiveCue('squat', [rep(1, []), rep(2, ['forward-lean']), rep(3, ['forward-lean'])], hist)).toBeUndefined()
+    // 3 レップ続いても、直近の履歴で出ている崩れは従来どおり 2 レップで言う
+    const withFault = { ...h, faultCounts: { 'forward-lean': 2 } }
+    expect(pickLiveCue('squat', [rep(1, ['forward-lean']), rep(2, ['forward-lean'])], [withFault, h, h])?.code).toBe('forward-lean')
+  })
+
   it('計測中の v1 の code を v2 にそろえて、履歴によるフェーディングと声を決める', () => {
     // squat の v1「lean」は v2「forward-lean」。直近3回で forward-lean が0回なら言わない
     const h0 = { date: '2026-11-20', exerciseId: 'e', key: 'squat' as const, weight: 60, reps: 5, avgScore: 90, faultCounts: {}, confidence: 1 }

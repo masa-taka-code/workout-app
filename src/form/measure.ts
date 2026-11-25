@@ -468,6 +468,8 @@ function measureSquat(
 
   const { shoulder, hip, knee, ankle } = bottom.pts ?? {}
   if (knee && ankle) m.shinLeanBottom = round(tiltFromVertical(ankle, knee), 1)
+  const torsoBottom = bottom.angles?.torso
+  if (torsoBottom !== undefined) m.trunkLeanBottom = round(torsoBottom, 1)
   if (shoulder && hip && knee) {
     // バー≒肩の真下に荷重線があるとみなし、荷重線から股関節・膝までの水平距離の比
     const dh = Math.abs(shoulder.x - hip.x)

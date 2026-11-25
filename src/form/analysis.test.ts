@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { analyzeSet, emphasisTargets, shouldCueLive, toSessionSummary } from './analysis'
+import { analyzeSet, emphasisTargets, hipKneeLevel, shouldCueLive, toSessionSummary } from './analysis'
 import type { FormContext, FormExerciseKey, FormSessionSummary, Issue, RepMetrics, RepResult } from './types'
 
 /** テスト用：RepResult を直接組み立てる（metrics は渡したときだけ付く） */
@@ -120,20 +120,57 @@ describe('ストレッチ：bench', () => {
 })
 
 describe('効いている部位', () => {
-  it('squat：hipMomentShare の平均から distribution を作る', () => {
+  it('squat：hipMomentShare の平均から段階（level）と、段階の代表値の share を作る', () => {
+    // 平均 0.7 → HKR 2.33 → 股関節優位（代表 HKR 2.2 → h = 2.2 / 3.2）
     const reps = [rep(1, {}, { hipMomentShare: 0.6 }), rep(2, {}, { hipMomentShare: 0.8 })]
-    const [hip, quad] = analyzeSet(reps, ctx('squat')).emphasis.distribution
+    const e = analyzeSet(reps, ctx('squat')).emphasis
+    const [hip, quad] = e.distribution
+    expect(e.level).toBe('股関節優位')
     expect(hip.muscles).toEqual(['臀筋'])
-    expect(hip.share).toBeCloseTo(0.7)
+    expect(hip.share).toBeCloseTo(2.2 / 3.2)
     expect(quad.muscles).toEqual(['大腿四頭筋'])
-    expect(quad.share).toBeCloseTo(0.3)
+    expect(quad.share).toBeCloseTo(1 - 2.2 / 3.2)
   })
 
-  it('squat：すね前傾 − 体幹前傾 ≥ 8° で「膝寄りの負荷」の注記', () => {
-    const on = analyzeSet(squatReps([120], { shinLeanBottom: 40, trunkLeanMax: 32, hipMomentShare: 0.5 }), ctx('squat'))
-    expect(on.emphasis.note).toContain('膝寄りの負荷')
-    const off = analyzeSet(squatReps([120], { shinLeanBottom: 40, trunkLeanMax: 33, hipMomentShare: 0.5 }), ctx('squat'))
-    expect(off.emphasis.note).not.toContain('膝寄りの負荷')
+  it('squat：HKR の4段階の境界（0.6 / 1.2 / 1.85）と代表値', () => {
+    const lv = (hkr: number) => hipKneeLevel(hkr / (1 + hkr)).level
+    expect(lv(0.59)).toBe('膝優位')
+    expect(lv(0.6)).toBe('やや膝寄り')
+    expect(lv(1.19)).toBe('やや膝寄り')
+    expect(lv(1.2)).toBe('やや股関節寄り')
+    expect(lv(1.84)).toBe('やや股関節寄り')
+    expect(lv(1.85)).toBe('股関節優位')
+    expect(lv(5)).toBe('股関節優位')
+    expect(hipKneeLevel(1).level).toBe('股関節優位') // h = 1（HKR 無限大）でも落ちない
+    // 代表値 HKR 0.3 / 0.9 / 1.5 / 2.2 → h = HKR / (1 + HKR)
+    expect(hipKneeLevel(0.2).share).toBeCloseTo(0.3 / 1.3)
+    expect(hipKneeLevel(0.4).share).toBeCloseTo(0.9 / 1.9)
+    expect(hipKneeLevel(0.55).share).toBeCloseTo(1.5 / 2.5)
+    expect(hipKneeLevel(0.7).share).toBeCloseTo(2.2 / 3.2)
+  })
+
+  it('squat：hipMomentShare から4段階の level が出る（膝優位〜股関節優位）', () => {
+    const level = (h: number) => analyzeSet(squatReps([120], { hipMomentShare: h }), ctx('squat')).emphasis.level
+    expect(level(0.3)).toBe('膝優位')
+    expect(level(0.5)).toBe('やや膝寄り')
+    expect(level(0.55)).toBe('やや股関節寄り')
+    expect(level(0.7)).toBe('股関節優位')
+    expect(analyzeSet([rep(1, {}, {})], ctx('bench')).emphasis.level).toBeUndefined()
+    expect(analyzeSet([rep(1, {}, {})], ctx('curl')).emphasis.level).toBeUndefined()
+  })
+
+  it('squat：最下点で 体幹の前傾 − すねの前傾 ≥ 2.2° なら「股関節寄りの姿勢」、未満なら「膝寄りの姿勢」', () => {
+    const note = (trunk: number) =>
+      analyzeSet(squatReps([120], { shinLeanBottom: 30, trunkLeanBottom: trunk, hipMomentShare: 0.5 }), ctx('squat')).emphasis.note
+    expect(note(32.2)).toContain('股関節寄りの姿勢です（Straub, Barrack ら 2025）')
+    expect(note(32.2)).not.toContain('膝寄りの姿勢')
+    expect(note(32.1)).toContain('膝寄りの姿勢')
+    expect(note(32.1)).not.toContain('股関節寄りの姿勢')
+    expect(note(32.2)).not.toContain('Barrack 2021')
+    expect(note(32.2)).toContain('論文は3D・しゃがむ局面全体の平均、アプリは2D・最下点の近似です。')
+    // 最下点の体幹前傾（trunkLeanBottom）が無ければ、姿勢の注記は出さない（レップ中の最大 trunkLeanMax は使わない）
+    const none = analyzeSet(squatReps([120], { shinLeanBottom: 30, trunkLeanMax: 50 }), ctx('squat')).emphasis.note
+    expect(none).not.toContain('寄りの姿勢')
   })
 
   it('squat：hipMomentShare が無ければ share は undefined', () => {
@@ -146,22 +183,22 @@ describe('効いている部位', () => {
   })
 
   describe('狙いの部位の score = 100 × S × (0.6P + 0.4L)', () => {
-    // flex 140 → L = 1。hipMomentShare 0.7、速度低下 20% → P = 0.5
+    // flex 140 → L = 1。hipMomentShare 0.7 → 股関節優位（share 2.2/3.2 = 0.6875）、速度低下 12.5% → P = 0.5
     const reps = (loss?: number) => squatReps([140], { hipMomentShare: 0.7, velocityLossPct: loss })
     it('P と L の両方あり', () => {
-      const hips = analyzeSet(reps(20), ctx('squat', { targetId: 'hips' })).emphasis.target!
-      expect(hips.share).toBeCloseTo(0.7)
-      expect(hips.score).toBe(49) // 100 × 0.7 × (0.3 + 0.4)
+      const hips = analyzeSet(reps(12.5), ctx('squat', { targetId: 'hips' })).emphasis.target!
+      expect(hips.share).toBeCloseTo(0.6875)
+      expect(hips.score).toBe(48) // 100 × 0.6875 × (0.3 + 0.4) = 48.1
       expect(hips.tips.length).toBeGreaterThan(0)
-      const quads = analyzeSet(reps(20), ctx('squat', { targetId: 'quads' })).emphasis.target!
-      expect(quads.share).toBeCloseTo(0.3)
-      expect(quads.score).toBe(21) // 100 × 0.3 × 0.7
+      const quads = analyzeSet(reps(12.5), ctx('squat', { targetId: 'quads' })).emphasis.target!
+      expect(quads.share).toBeCloseTo(0.3125)
+      expect(quads.score).toBe(22) // 100 × 0.3125 × 0.7 = 21.9
     })
     it('P が無ければ L だけ', () => {
-      expect(analyzeSet(reps(undefined), ctx('squat', { targetId: 'hips' })).emphasis.target?.score).toBe(70)
+      expect(analyzeSet(reps(undefined), ctx('squat', { targetId: 'hips' })).emphasis.target?.score).toBe(69) // 100 × 0.6875
     })
     it('L が無ければ P だけ（bench は S = 1）', () => {
-      const r = analyzeSet([rep(1, {}, { velocityLossPct: 20 })], ctx('bench', { targetId: 'chest' }))
+      const r = analyzeSet([rep(1, {}, { velocityLossPct: 12.5 })], ctx('bench', { targetId: 'chest' }))
       expect(r.emphasis.target?.share).toBeUndefined()
       expect(r.emphasis.target?.score).toBe(50)
     })
@@ -172,15 +209,28 @@ describe('効いている部位', () => {
     })
   })
 
-  it('effort：速度低下の最大から proximity を出す（40% で 1）', () => {
+  it('effort：速度低下の最大から proximity を出す（筋肥大向けの目安 25% で 1、Hickmott 2022）', () => {
     const reps = [0, 10, 60].map((l, i) => rep(i + 1, {}, { velocityLossPct: l }))
     const r = analyzeSet(reps, ctx('squat'))
     expect(r.effort.velocityLossPct).toBe(60)
     expect(r.effort.proximity).toBe(1)
     expect(r.effort.source).toBe('velocity')
-    const half = analyzeSet([rep(1, {}, { velocityLossPct: 20 })], ctx('squat'))
-    expect(half.effort.proximity).toBeCloseTo(0.5)
+    const one = (loss: number, key: 'squat' | 'bench') => analyzeSet([rep(1, {}, { velocityLossPct: loss })], ctx(key)).effort
+    expect(one(12.5, 'squat').proximity).toBeCloseTo(0.5)
+    expect(one(25, 'squat').proximity).toBe(1)
+    expect(one(24, 'squat').proximity).toBeCloseTo(0.96)
+    expect(one(40, 'bench').proximity).toBe(1) // 40% で打ち止めにしない：25% 以上は 1
+    expect(one(10, 'bench').proximity).toBeCloseTo(0.4)
     expect(analyzeSet(squatReps([120]), ctx('squat')).effort.source).toBe('none')
+  })
+
+  it('effort：curl は proximity を出さない（source は none）', () => {
+    const r = analyzeSet([rep(1, {}, { velocityLossPct: 30 })], ctx('curl'))
+    expect(r.effort).toEqual({ source: 'none' })
+    expect(r.effort.proximity).toBeUndefined()
+    // curl の狙いスコアは、proximity が無いのでストレッチだけから出る
+    const t = analyzeSet([rep(1, { maxAngle: 170 }, { velocityLossPct: 30 })], ctx('curl', { targetId: 'long' })).emphasis.target!
+    expect(t.score).toBe(Math.round(100 * 1))
   })
 
   it('bench：比率は出さず、主働筋・補助筋の向きだけ', () => {
@@ -196,6 +246,26 @@ describe('効いている部位', () => {
     expect(note(-10)).not.toContain('インクライン')
     expect(note(0)).not.toContain('プリーチャー')
   })
+
+  it('curl：注記は Kassiano ら 2025 の筋厚の結果と Attarieh 2025 で、Nunes や仕組みの断定は書かない', () => {
+    const n = analyzeSet([rep(1, {}, { shoulderAngleAtBottom: -15 })], ctx('curl')).emphasis.note
+    expect(n).toContain('Kassiano ら 2025')
+    expect(n).toContain('Attarieh 2025')
+    expect(n).not.toContain('Nunes')
+    expect(n).not.toContain('伸びやすい')
+  })
+
+  it('bench：コツに Mendonça を引用しない。squat の hips のコツに Paoli 2009 は「筋電」「未検証」を添える', () => {
+    const chest = analyzeSet([rep(1, {}, {})], ctx('bench', { targetId: 'chest' })).emphasis.target!.tips.join('')
+    expect(chest).not.toContain('Mendon')
+    expect(chest).toContain('毎回同じ深さ')
+    const hips = analyzeSet(squatReps([120]), ctx('squat', { targetId: 'hips' })).emphasis.target!.tips.join('')
+    expect(hips).toContain('筋電')
+    expect(hips).toContain('筋肥大は未検証')
+    const distal = analyzeSet([rep(1, {}, {})], ctx('curl', { targetId: 'distal' })).emphasis.target!.tips.join('')
+    expect(distal).toContain('Kassiano ら 2025')
+    expect(distal).not.toContain('Nunes')
+  })
 })
 
 describe('崩れの検出としきい値', () => {
@@ -203,9 +273,10 @@ describe('崩れの検出としきい値', () => {
     analyzeSet(reps, ctx(key, c)).faults.map(f => f.code).sort()
   const one = (m: Partial<RepMetrics>, o: Partial<RepResult> = {}) => [rep(1, o, m)]
 
-  it('squat：forward-lean は 60° 超', () => {
-    expect(codes('squat', one({ trunkLeanMax: 61, kneeFlexionBottom: 120 }))).toEqual(['forward-lean'])
-    expect(codes('squat', one({ trunkLeanMax: 60, kneeFlexionBottom: 120 }))).toEqual([])
+  it('squat：forward-lean は 72° 超（基準動画なし。60° + 誤差の余裕 12°）', () => {
+    expect(codes('squat', one({ trunkLeanMax: 73, kneeFlexionBottom: 120 }))).toEqual(['forward-lean'])
+    expect(codes('squat', one({ trunkLeanMax: 72, kneeFlexionBottom: 120 }))).toEqual([])
+    expect(codes('squat', one({ trunkLeanMax: 61, kneeFlexionBottom: 120 }))).toEqual([])
   })
   it('squat：基準動画があれば forward-lean は「基準の前傾 +15°」超で判定', () => {
     const baseline = { romDeg: 100, minAngle: 70, maxAngle: 170, trunkLeanMax: 40 }
@@ -218,9 +289,10 @@ describe('崩れの検出としきい値', () => {
     expect(codes('squat', one({ heelLift: 0.031, kneeFlexionBottom: 120 }))).toEqual(['heel-lift'])
     expect(codes('squat', one({ heelLift: 0.03, kneeFlexionBottom: 120 }))).toEqual([])
   })
-  it('squat：shallow は膝屈曲 90° 未満（基準なし）', () => {
-    expect(codes('squat', one({ kneeFlexionBottom: 89 }))).toEqual(['shallow'])
-    expect(codes('squat', one({ kneeFlexionBottom: 90 }))).toEqual([])
+  it('squat：shallow は膝屈曲 78° 未満（基準なし。90° − 誤差の余裕 12°）', () => {
+    expect(codes('squat', one({ kneeFlexionBottom: 77 }))).toEqual(['shallow'])
+    expect(codes('squat', one({ kneeFlexionBottom: 78 }))).toEqual([])
+    expect(codes('squat', one({ kneeFlexionBottom: 89 }))).toEqual([])
   })
   it('squat：基準ありなら shallow は D < 0.9（膝屈曲より基準を優先）', () => {
     const baseline = { romDeg: 100, minAngle: 70, maxAngle: 170 }
@@ -228,11 +300,18 @@ describe('崩れの検出としきい値', () => {
     expect(codes('squat', one({ kneeFlexionBottom: 85 }, { romDeg: 90 }), { baseline })).toEqual([])
     expect(codes('squat', one({ kneeFlexionBottom: 85 }, { romDeg: 100 }), { baseline })).toEqual([])
   })
-  it('squat：knee-valgus は front のとき 10° 超だけ', () => {
+  it('squat：knee-valgus は front で viewOk が ok のとき 10° 超だけ', () => {
     const front = { view: 'front' as const, kneeFlexionBottom: 120 }
     expect(codes('squat', one({ ...front, kneeValgusDeg: 11 }))).toEqual(['knee-valgus'])
     expect(codes('squat', one({ ...front, kneeValgusDeg: 10 }))).toEqual([])
     expect(codes('squat', one({ kneeFlexionBottom: 120, kneeValgusDeg: 20 }))).toEqual([]) // side では出さない
+    // 向きが ok でない（caution・ng）正面では出さない
+    expect(codes('squat', one({ ...front, viewOk: 'caution', kneeValgusDeg: 20 }))).toEqual([])
+    expect(codes('squat', one({ ...front, viewOk: 'ng', kneeValgusDeg: 20 }))).toEqual([])
+    // 表示名は「見える」（2D の見かけの値）
+    const f = analyzeSet(one({ ...front, kneeValgusDeg: 20 }), ctx('squat')).faults[0]
+    expect(f.label).toBe('膝が内側に入って見える')
+    expect(f.evidence).toContain('R² 0〜64%')
   })
   it('squat：計測値が無ければ v1 の shallow / lean を使う', () => {
     expect(codes('squat', one({}, { issues: [issue('shallow'), issue('lean')] }))).toEqual(['forward-lean', 'shallow'])
@@ -329,7 +408,7 @@ describe('trend（前回との比較）', () => {
     expect(r.trend).toBe('前回との比較：ストレッチ −19 点。') // 31 − 50
   })
   it('崩れの回数の変化「3→1」', () => {
-    const reps = [rep(1, {}, { kneeFlexionBottom: 120, trunkLeanMax: 70 })]
+    const reps = [rep(1, {}, { kneeFlexionBottom: 120, trunkLeanMax: 75 })]
     const r = analyzeSet(reps, ctx('squat', { history: [summary({ faultCounts: { 'forward-lean': 3 } })] }))
     expect(r.trend).toContain('上体の前傾が大きい：3回→1回')
   })
@@ -410,7 +489,7 @@ describe('レポート全体', () => {
 
 describe('toSessionSummary', () => {
   it('faultCounts に崩れごとのレップ数を入れる', () => {
-    const reps = [1, 2, 3].map(i => rep(i, {}, { kneeFlexionBottom: 120, heelLift: i < 3 ? 0.05 : 0, trunkLeanMax: 70 }))
+    const reps = [1, 2, 3].map(i => rep(i, {}, { kneeFlexionBottom: 120, heelLift: i < 3 ? 0.05 : 0, trunkLeanMax: 75 }))
     const c = ctx('squat', { weight: 80 })
     const report = analyzeSet(reps, c)
     const s = toSessionSummary(report, reps, c, '2026-11-25')

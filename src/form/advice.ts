@@ -1,7 +1,8 @@
 /**
  * 崩れ（FaultFinding）ごとの表示用の定義表。ラベル・キュー・練習・セルフチェック・筋肉のヒント・出典。
  * 文言は断定しない。キューは外的焦点（体の部位でなく、動きの結果・床・バー）の短い言葉にする。
- * 根拠：scratchpad の form-research/faults.md と muscles.md（いずれも検索要約ベースで、論文本文は未確認）。
+ * 外的焦点のキューの根拠の強さは「弱〜中」（再解析で効果がほぼ消える：McKay 2024）。害はないので続けるが、効果は断定しない。
+ * 根拠：scratchpad の form-research と verify の確認結果（論文本文・抄録で確認できた範囲だけを書く）。
  */
 import type { CauseKind, FormExerciseKey } from './types'
 
@@ -16,7 +17,7 @@ export interface FaultAdvice {
 
 /** 膝-壁テストの手順（信頼性は高いが、後ろ足の位置で値が変わるので手順をそろえる） */
 export const KNEE_WALL_TEST =
-  '膝-壁テスト：壁の前に立ち、かかとを床につけたまま膝を壁につけられる範囲で、足を壁からできるだけ離します。つま先と壁の距離を測り、足の置き方を毎回そろえて、左右・日を変えて比べます（Powden 2015）。'
+  '膝-壁テスト：壁の前に立ち、かかとを床につけたまま膝を壁につけられる範囲で、足を壁からできるだけ離します。つま先と壁の距離を測り、足の置き方を毎回そろえて、左右・日を変えて比べます。2cm 以上変われば変化ありとみなせます（1cm の変化は誤差の範囲：Powden 2015）。'
 
 /** 共通の定義（種目で文言が違うものは下の ADVICE_BY_KEY が優先される） */
 const ADVICE: Record<string, FaultAdvice> = {
@@ -42,12 +43,12 @@ const ADVICE: Record<string, FaultAdvice> = {
     drills: ['軽い重量で深さをそろえる'],
   },
   'knee-valgus': {
-    label: '膝が内側に入る（参考）',
+    label: '膝が内側に入って見える',
     cue: '床を外に押し広げる',
     drills: ['軽い重量で反復する', 'かかと台で比べる'],
     selfCheck: KNEE_WALL_TEST + ' 左右差も見ます。',
     muscleHint: '股関節の筋力との関係は研究で一致していません（根拠の強さ：低）',
-    evidence: 'Alzahrani 2021（系統的レビュー）、Dix 2019',
+    evidence: '2D の投影角は 3D の外反とほとんど一致しません（R² 0〜64%）。股関節の筋力との関係：Alzahrani 2021（系統的レビュー）、Dix 2019（女性の片脚スクワットの研究）',
   },
   'hip-rise': {
     label: 'お尻が浮く',
@@ -59,7 +60,7 @@ const ADVICE: Record<string, FaultAdvice> = {
     label: 'バーの軌道がずれる',
     cue: 'バーを肩の上に戻す',
     drills: ['軽い重量の軌道と見比べる'],
-    evidence: '限界近くでは軌道が肩の真上に寄る（Duffey 2007、少人数）',
+    evidence: '後半の軌道の変化は、疲労による自然な変化のことがあります（Duffey 2007。方向は系統的レビューでも確認）',
   },
   'partial-bottom': {
     label: '下で腕を伸ばしきれていない',
@@ -115,7 +116,7 @@ const ADVICE_BY_KEY: Record<string, FaultAdvice> = {
     label: 'バーが胸まで下りていない',
     cue: '胸に軽く触れるまで下ろす',
     drills: ['重量を下げて全可動域で行う', '基準動画と同じ深さで撮り比べる'],
-    evidence: 'フル可動域で大胸筋の肥大が大きい（Mendonça 2021）',
+    evidence: '深さをそろえると記録を比べやすい。可動域の違いによる長期の効果は研究で一貫しない',
   },
 }
 

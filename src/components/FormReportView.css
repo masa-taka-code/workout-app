@@ -53,6 +53,12 @@
 .frv-band { display: flex; gap: 2px; height: 12px; border-radius: 6px; overflow: hidden; }
 .frv-band-on { background: var(--accent); }
 .frv-band-off { flex: 1; background: var(--border-strong); }
+.frv-level { display: flex; flex-direction: column; gap: 6px; }
+.frv-level-big { font-size: 28px; font-weight: 700; overflow-wrap: anywhere; }
+.frv-level-scale { display: flex; gap: 4px; height: 12px; }
+.frv-level-scale > span { flex: 1; border-radius: 6px; background: var(--border-strong); }
+.frv-level-scale > .frv-level-on { background: var(--accent); }
+.frv-level-ends { display: flex; justify-content: space-between; }
 .frv-dist { list-style: none; padding: 0; font-size: 14px; }
 .frv-score-big { font-size: 16px; }
 .frv-score-big strong { font-size: 32px; font-variant-numeric: tabular-nums; }

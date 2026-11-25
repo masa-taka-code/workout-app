@@ -125,11 +125,13 @@ export interface RepMetrics {
   trunkLeanMax?: number
   /** 最下点のすねの前傾（鉛直からの角度） */
   shinLeanBottom?: number
+  /** 最下点の体幹の前傾（鉛直からの角度） */
+  trunkLeanBottom?: number
   /** 最下点での股関節モーメントの割合 0〜1（バー≒肩の水平位置から股関節・膝までの水平距離の比） */
   hipMomentShare?: number
   /** かかとの浮き（つま先に対するかかとの上昇量の最大、脚の長さに対する比） */
   heelLift?: number
-  /** 正面撮影のときの膝の内側への倒れ込み（膝の投影角、度。参考値） */
+  /** 正面撮影のときの膝の内側への倒れ込み（膝の投影角、度。2D の見かけの値で、3D の外反とは一致しない） */
   kneeValgusDeg?: number
   // --- bench ---
   /** 手首の水平方向のずれ（そのセットの1レップ目の軌道との差の最大、前腕の長さに対する比） */
@@ -212,6 +214,8 @@ export interface FormReport {
   }
   emphasis: {
     distribution: EmphasisShare[]
+    /** 負荷配分の段階の名前（例「やや股関節寄り」）。段階に分けない種目は undefined */
+    level?: string
     /** 選んだ狙いの部位 */
     target?: {
       id: string
@@ -227,7 +231,7 @@ export interface FormReport {
   }
   effort: {
     velocityLossPct?: number
-    /** 限界への近さ 0〜1（速度低下 40% で 1） */
+    /** 筋肥大向けの目安（速度低下 25% 以上）にどれだけ届いたか 0〜1（squat・bench のみ。Hickmott 2022） */
     proximity?: number
     source: 'velocity' | 'none'
   }

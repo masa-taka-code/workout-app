@@ -5,7 +5,7 @@ import type { EmphasisTarget, FaultFinding, FormReport, RepResult } from '../for
 import BodyMap from './BodyMap'
 import {
   CAUSE_LABEL, SAFETY_FAULT_CODES, barWidth, bestRep, conditionWord, confidenceDots, groupFaults,
-  isReferenceRep, onlyLowConfidence, pctText, repsText, shareText,
+  isReferenceRep, levelIndex, onlyLowConfidence, pctText, repsText, shareText,
 } from './reportFormat'
 import './FormReportView.css'
 
@@ -144,8 +144,12 @@ export default function FormReportView({
   const best = bestRep(reps)
   const cue = report.primaryCue ?? 'この調子で'
 
+  const level = report.emphasis.level
+  const levelPos = levelIndex(level)
+  // 段階（level）があるときは、約◯% は出さず段階の名前で示す
+  const showShare = level === undefined
   const emphasisHint = tgt
-    ? `狙い：${tgt.label}${tgt.share !== undefined ? ` ${shareText(tgt.share)}` : ''}`
+    ? `狙い：${tgt.label}${showShare && tgt.share !== undefined ? ` ${shareText(tgt.share)}` : ''}`
     : undefined
 
   const saveBaseline = () => {
@@ -264,9 +268,22 @@ export default function FormReportView({
         <BodyMap
           highlights={highlights}
           size="md"
-          label={`効いている部位：${dist.map(d => d.label + (d.share !== undefined ? ' ' + shareText(d.share) : '')).join('、')}`}
+          label={`効いている部位：${level ?? dist.map(d => d.label + (d.share !== undefined ? ' ' + shareText(d.share) : '')).join('、')}`}
         />
-        {tgt?.share !== undefined && (
+        {level !== undefined && (
+          <div className="frv-level">
+            <p className="frv-level-big">{level}</p>
+            {levelPos >= 0 && (
+              <>
+                <div className="frv-level-scale" aria-hidden="true">
+                  {[0, 1, 2, 3].map(i => <span key={i} className={i === levelPos ? 'frv-level-on' : undefined} />)}
+                </div>
+                <div className="frv-level-ends muted small" aria-hidden="true"><span>膝</span><span>股関節</span></div>
+              </>
+            )}
+          </div>
+        )}
+        {showShare && tgt?.share !== undefined && (
           <div className="frv-band" aria-hidden="true">
             <span className="frv-band-on" style={{ width: `${barWidth(tgt.share)}%` }} />
             <span className="frv-band-off" />
@@ -276,7 +293,7 @@ export default function FormReportView({
           {dist.map((d, i) => (
             <li key={i}>
               {d.label}
-              {d.share !== undefined ? <strong> {shareText(d.share)}</strong> : <span className="muted">（向きだけ）</span>}
+              {!showShare ? null : d.share !== undefined ? <strong> {shareText(d.share)}</strong> : <span className="muted">（向きだけ）</span>}
             </li>
           ))}
         </ul>
