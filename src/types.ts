@@ -57,6 +57,8 @@ export interface SetLog {
    * 誤差 = (reps − target.reps) − rir
    */
   amrap?: boolean
+  /** 動画フォーム採点の平均点（0〜100） */
+  formScore?: number
 }
 
 /** 種目を終えたあとの振り返り（0〜2 の3段階） */
@@ -127,6 +129,8 @@ export interface AppData {
   sound?: boolean
   /** トレーニングの予定（曜日と時刻） */
   schedule?: Schedule
+  /** 動画フォーム採点の基準（自分の良いフォームの可動域）。種目キーごと */
+  formBaselines?: Partial<Record<string, { romDeg: number; minAngle: number; maxAngle: number; savedAt: string }>>
 }
 
 /** 各画面に渡す props */

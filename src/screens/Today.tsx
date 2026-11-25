@@ -8,6 +8,9 @@ import NumInput from '../components/NumInput'
 import RestTimer from '../components/RestTimer'
 import SetNote from '../components/SetNote'
 import WarmupPanel from '../components/WarmupPanel'
+import BodyMap from '../components/BodyMap'
+import FormCheckButton from '../components/FormCheckButton'
+import { exerciseHighlights } from '../bodymap'
 import AmrapHint from '../components/AmrapHint'
 import FeedbackPanel from '../components/FeedbackPanel'
 import SubstitutePanel from '../components/SubstitutePanel'
@@ -102,6 +105,17 @@ export default function Today({ data, setData }: ScreenProps) {
     }))
   }
 
+  /** 動画で撮影したセットの回数と点数を、次の未完了セットに入れて完了にする */
+  const applyFormResult = (ex: Exercise, entry: Entry, result: { reps: number; formScore: number }) => {
+    const i = entry.sets.findIndex(s => !s.done)
+    if (i === -1) {
+      alert('未完了のセットがありません。「セット追加」してから反映してください')
+      return
+    }
+    updateSetLog(ex.id, i, { reps: result.reps, formScore: result.formScore })
+    toggleDone(ex, entry, i)
+  }
+
   const toggleDone = (ex: Exercise, entry: Entry, i: number) => {
     const wasDone = entry.sets[i].done
     updateSetLog(ex.id, i, { done: !wasDone })
@@ -171,6 +185,19 @@ export default function Today({ data, setData }: ScreenProps) {
                 <p className="muted small">{t.reason}</p>
                 {t.caution && <p className="target-caution">{t.caution}</p>}
                 <WarmupPanel ex={ex} target={t} />
+                <BodyMap highlights={exerciseHighlights(ex)} size="sm" label={`${ex.name}で効く筋肉`} />
+                <FormCheckButton
+                  ex={ex}
+                  entry={entry}
+                  data={data}
+                  onApply={result => applyFormResult(ex, entry, result)}
+                  onSaveBaseline={(key, baseline) =>
+                    setData(prev => ({
+                      ...prev,
+                      formBaselines: { ...prev.formBaselines, [key]: { ...baseline, savedAt: today } },
+                    }))
+                  }
+                />
                 <SubstitutePanel ex={ex} entry={entry} data={data} onReplace={next => replaceExercise(ex, next)} />
               </>
             )}
