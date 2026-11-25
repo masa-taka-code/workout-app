@@ -58,6 +58,8 @@ export default function Today({ data, setData }: ScreenProps) {
   const condition: Condition = session?.condition ?? 'normal'
   const [picking, setPicking] = useState(false)
   const [timerRun, setTimerRun] = useState<number | undefined>()  // 休憩開始ごとに増える番号
+  // 休憩の開始時刻（動画撮影の自動終了時刻から数えるとき）。通常は undefined＝完了を押した時点から
+  const [timerStartedAt, setTimerStartedAt] = useState<number | undefined>()
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())  // 手動で展開したセット（種目id:位置）
   const [openTool, setOpenTool] = useState<Record<string, string | null>>({})  // 種目ごとに開いている補助機能
   const [undo, setUndo] = useState<UndoState | null>(null)
@@ -120,21 +122,22 @@ export default function Today({ data, setData }: ScreenProps) {
   }
 
   /** 動画で撮影したセットの回数と点数を、次の未完了セットに入れて完了にする */
-  const applyFormResult = (ex: Exercise, entry: Entry, result: { reps: number; formScore: number }) => {
+  const applyFormResult = (ex: Exercise, entry: Entry, result: { reps: number; formScore: number; endedAt?: number }) => {
     const i = entry.sets.findIndex(s => !s.done)
     if (i === -1) {
       alert('未完了のセットがありません。「セット追加」してから反映してください')
       return
     }
     updateSetLog(ex.id, i, { reps: result.reps, formScore: result.formScore })
-    toggleDone(ex, entry, i)
+    toggleDone(ex, entry, i, result.endedAt)
   }
 
-  const toggleDone = (ex: Exercise, entry: Entry, i: number) => {
+  const toggleDone = (ex: Exercise, entry: Entry, i: number, restStartedAt?: number) => {
     const wasDone = entry.sets[i].done
     updateSetLog(ex.id, i, { done: !wasDone })
     if (!wasDone) {
       primeAudio()
+      setTimerStartedAt(restStartedAt)
       setTimerRun(n => (n ?? 0) + 1)
       setScrollReq(r => ({ n: (r?.n ?? 0) + 1, exerciseId: ex.id }))
     }
@@ -277,6 +280,7 @@ export default function Today({ data, setData }: ScreenProps) {
                     data={data}
                     bare
                     onApply={result => applyFormResult(ex, entry, result)}
+                    setData={setData}
                     onSaveBaseline={(key, baseline) =>
                       setData(prev => ({
                         ...prev,
@@ -404,6 +408,7 @@ export default function Today({ data, setData }: ScreenProps) {
           seconds={data.restSeconds}
           sound={data.sound ?? true}
           next={nextSet}
+          startedAt={timerStartedAt}
           onSkip={() => setTimerRun(undefined)}
         />
       )}

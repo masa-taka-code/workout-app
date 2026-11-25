@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { AppData, Entry, Exercise } from '../types'
+import type { AppData, Entry, Exercise, ScreenProps } from '../types'
 import { formKeyFor } from '../form/engine'
 import FormCheck from './FormCheck'
 
@@ -9,8 +9,13 @@ export interface FormCheckButtonProps {
   ex: Exercise
   entry: Entry
   data: AppData
-  /** 撮影したセットの結果を、今日の次の未完了セットに反映する */
-  onApply: (result: { reps: number; formScore: number }) => void
+  /**
+   * 撮影したセットの結果を、今日の次の未完了セットに反映する。
+   * endedAt は撮影が終わった時刻（Date.now() の値）。休憩タイマーはこの時刻から数える。
+   */
+  onApply: (result: { reps: number; formScore: number; endedAt?: number }) => void
+  /** フォームの要約・詳細レポート・狙いの部位・音声やカメラの設定を保存するため */
+  setData?: ScreenProps['setData']
   /** 基準（良いフォームの可動域）を保存する */
   onSaveBaseline: (key: string, baseline: { romDeg: number; minAngle: number; maxAngle: number }) => void
 }

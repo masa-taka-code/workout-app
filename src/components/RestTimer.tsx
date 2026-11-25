@@ -21,11 +21,13 @@ interface Props {
   sound?: boolean
   /** 次にやるセット（今日の未完了セットがなければ undefined） */
   next?: NextSet
+  /** 休憩の開始時刻（Date.now() の値）。省略時は表示した時点から数える（動画撮影の自動終了時刻など） */
+  startedAt?: number
 }
 
 /** 画面下部に固定表示する休憩タイマー */
-export default function RestTimer({ seconds, onSkip, sound = true, next }: Props) {
-  const [endAt, setEndAt] = useState(() => Date.now() + seconds * 1000)
+export default function RestTimer({ seconds, onSkip, sound = true, next, startedAt }: Props) {
+  const [endAt, setEndAt] = useState(() => (startedAt ?? Date.now()) + seconds * 1000)
   const [totalMs, setTotalMs] = useState(() => Math.max(1, seconds * 1000))
   const [now, setNow] = useState(() => Date.now())
   const rootRef = useRef<HTMLDivElement>(null)

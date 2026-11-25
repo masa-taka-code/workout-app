@@ -133,6 +133,23 @@ export interface AppData {
   formBaselines?: Partial<Record<string, { romDeg: number; minAngle: number; maxAngle: number; savedAt: string }>>
   /** フォーム解析の要約の履歴（新しい順、最大 200 件）。原因判定の手がかりに使う */
   formSessions?: import('./form/types').FormSessionSummary[]
+  /** 帰宅後に読むための詳細レポート（新しい順、最大 20 件） */
+  formReports?: SavedFormReport[]
+  /** 種目ごとに最後に選んだ「効かせたい部位」の id */
+  formTargets?: Record<string, string>
+  /** 撮影中の音声（声かけ・終了の読み上げ）。未設定はオン */
+  formVoice?: boolean
+  /** 撮影に使うカメラ（最後に使ったもの）。未設定は内カメラ */
+  formCamera?: 'user' | 'environment'
+}
+
+/** 保存した詳細レポート */
+export interface SavedFormReport {
+  id: string
+  date: string
+  exerciseId: string
+  report: import('./form/types').FormReport
+  reps: import('./form/types').RepResult[]
 }
 
 /** 各画面に渡す props */
