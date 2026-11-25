@@ -51,6 +51,12 @@ describe('exerciseSeries', () => {
     const d = data([session('2026-11-10', [entry('gone', [s(50, 10)])])])
     expect(exerciseSeries('gone', d)).toEqual([])
   })
+
+  it('重量0のセットだけのセッションは点にせず、自己ベストにも使わない', () => {
+    const d = data([session('2026-11-10', [entry('bench', [s(0, 6)])])])
+    expect(exerciseSeries('bench', d)).toEqual([])
+    expect(personalBests('bench', d)).toBeUndefined()
+  })
 })
 
 describe('personalBests', () => {
@@ -148,9 +154,15 @@ describe('weeklySummary', () => {
     ])
   })
 
+  it('今日のやりかけの記録は達成率に含めない（回数には含める）', () => {
+    const d = data([session(TODAY, [entry('bench', [s(60, 8)], target(60, 8))])])
+    expect(weeklySummary(d, TODAY, 1)[0]).toEqual({ week: '2026-11-23', sessions: 1, rate: undefined })
+    expect(exerciseAchievement('bench', d, TODAY)).toEqual({ achieved: 0, total: 0 })
+  })
+
   it('達成率を週ごとに出す', () => {
     const d = data([
-      session('2026-11-24', [
+      session('2026-11-23', [
         entry('bench', [s(60, 8), s(60, 8)], target(60, 8)),
         entry('squat', [s(100, 3)], target(100, 5, 1)),
       ]),

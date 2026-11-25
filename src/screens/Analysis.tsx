@@ -55,7 +55,7 @@ export default function Analysis({ data }: ScreenProps) {
   const exerciseId = exercises.find(e => e.id === saved)?.id ?? exercises[0]?.id
   const series = useMemo(() => (exerciseId ? exerciseSeries(exerciseId, data) : []), [exerciseId, data])
   const bests = exerciseId ? personalBests(exerciseId, data) : undefined
-  const ach = exerciseId ? exerciseAchievement(exerciseId, data) : { achieved: 0, total: 0 }
+  const ach = exerciseId ? exerciseAchievement(exerciseId, data, today) : { achieved: 0, total: 0 }
 
   const thisWeekRate = weeks[weeks.length - 1]?.rate
 

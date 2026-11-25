@@ -17,7 +17,8 @@ export function exerciseSeries(exerciseId: string, data: AppData): SeriesPoint[]
   if (!ex) return []
   const points: SeriesPoint[] = []
   for (const s of byDate(data.sessions)) {
-    const sets = s.entries.filter(e => e.exerciseId === exerciseId).flatMap(e => doneSets(e))
+    // 重量0（入力し忘れ・自重）のセットは推移に含めない
+    const sets = s.entries.filter(e => e.exerciseId === exerciseId).flatMap(e => doneSets(e)).filter(x => x.weight > 0)
     if (sets.length === 0) continue
     const best = Math.max(...s.entries.filter(e => e.exerciseId === exerciseId).map(e => bestE1rm(e, ex)))
     points.push({
@@ -49,6 +50,7 @@ export function personalBests(exerciseId: string, data: AppData): PersonalBests 
     for (const en of s.entries) {
       if (en.exerciseId !== exerciseId) continue
       for (const set of doneSets(en)) {
+        if (set.weight <= 0) continue
         if (!weight || set.weight > weight.value || (set.weight === weight.value && set.reps > weight.reps)) {
           weight = { value: set.weight, reps: set.reps, date: s.date }
         }
@@ -59,11 +61,12 @@ export function personalBests(exerciseId: string, data: AppData): PersonalBests 
   return { e1rm, weight }
 }
 
-/** 目標どおりにできた回数（目標なし・初回は数えない） */
-export function exerciseAchievement(exerciseId: string, data: AppData): { achieved: number; total: number } {
+/** 目標どおりにできた回数（目標なし・初回は数えない。today を渡すと、その日のやりかけの記録も数えない） */
+export function exerciseAchievement(exerciseId: string, data: AppData, today?: string): { achieved: number; total: number } {
   let ok = 0
   let total = 0
   for (const s of data.sessions) {
+    if (s.date === today) continue
     for (const en of s.entries) {
       if (en.exerciseId !== exerciseId) continue
       const r = achieved(en)
@@ -83,12 +86,13 @@ export function recentWeeks(today: string, count: number): string[] {
 
 export interface WeekSummary { week: string; sessions: number; rate: number | undefined }
 
-/** 週ごとのトレーニング回数と目標達成率（古い順） */
+/** 週ごとのトレーニング回数と目標達成率（古い順）。達成率に今日のやりかけの記録は含めない */
 export function weeklySummary(data: AppData, today: string, weeks = 8): WeekSummary[] {
+  const finished = data.sessions.filter(s => s.date !== today)
   return recentWeeks(today, weeks).map(week => {
     const to = addDays(week, 7)
     const sessions = data.sessions.filter(s => s.date >= week && s.date < to && s.entries.some(e => doneSets(e).length > 0)).length
-    return { week, sessions, rate: achievementRate(data.sessions, week, to) }
+    return { week, sessions, rate: achievementRate(finished, week, to) }
   })
 }
 
