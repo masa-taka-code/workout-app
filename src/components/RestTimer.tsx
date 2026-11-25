@@ -1,12 +1,25 @@
 import { useEffect, useState } from 'react'
 import { playRestEnd } from '../sound'
 
+/** 休憩中に見せる「次のセット」 */
+export interface NextSet {
+  exerciseName: string
+  /** 1 始まり */
+  setNo: number
+  totalSets: number
+  /** 0 は未定（初回） */
+  weight: number
+  reps: number
+}
+
 interface Props {
   /** 休憩の秒数。リセットしたいときは親が key を変えて作り直す */
   seconds: number
   onSkip: () => void
   /** 終了時に音を鳴らすか */
   sound?: boolean
+  /** 次にやるセット（今日の未完了セットがなければ undefined） */
+  next?: NextSet
 }
 
 /** 画面下部に固定表示する休憩タイマー */
