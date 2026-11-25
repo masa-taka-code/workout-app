@@ -1,0 +1,23 @@
+.hist-month { font-size: 1rem; font-weight: 700; margin-top: 8px; }
+.hist-head { display: flex; align-items: flex-start; gap: 8px; }
+.hist-toggle {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hist-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 700; }
+.hist-caret { color: var(--muted); font-size: 0.8rem; font-weight: 400; }
+.hist-detail { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
+.hist-entry { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.hist-entry-name { font-weight: 600; overflow-wrap: anywhere; }
+.hist-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+.hist-note { white-space: pre-wrap; overflow-wrap: anywhere; }
+.hist-more { align-self: stretch; }
