@@ -31,10 +31,12 @@ const LIGHT_PAIRS: [string, string][] = [
   ['muted', 'bg'], ['muted', 'surface'], ['muted', 'accent-weak'], ['muted', 'surface-2'],
   ['accent', 'bg'], ['accent', 'surface'], ['accent', 'accent-weak'],
   ['good-text', 'good-weak'], ['warn-text', 'warn-weak'], ['on-accent', 'accent'],
+  ['bad-text', 'bad-weak'], ['bad-text', 'surface'],
 ]
 const DARK_PAIRS: [string, string][] = [
   ['text', 'bg'], ['muted', 'surface'], ['accent', 'surface'],
   ['good-text', 'good-weak'], ['warn-text', 'warn-weak'], ['on-accent', 'accent'],
+  ['bad-text', 'bad-weak'], ['bad-text', 'surface'],
 ]
 
 describe('デザイントークンのコントラスト（WCAG AA 4.5:1）', () => {
@@ -44,6 +46,17 @@ describe('デザイントークンのコントラスト（WCAG AA 4.5:1）', () 
         expect(vars[fg], `--${fg}`).toBeDefined()
         expect(vars[bg], `--${bg}`).toBeDefined()
         expect(contrast(vars[fg], vars[bg])).toBeGreaterThanOrEqual(4.5)
+      })
+    }
+  }
+})
+
+describe('映像の上の状態表示（白文字 / --status-*-bg、ライト・ダーク共通）', () => {
+  for (const [name, vars] of [['ライト', light], ['ダーク', dark]] as const) {
+    for (const bg of ['status-ok-bg', 'status-caution-bg', 'status-ng-bg']) {
+      it(`${name}: 白 / ${bg}`, () => {
+        expect(vars[bg], `--${bg}`).toBeDefined()
+        expect(contrast('#ffffff', vars[bg])).toBeGreaterThanOrEqual(4.5)
       })
     }
   }

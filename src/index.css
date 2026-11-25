@@ -16,6 +16,12 @@
   --warn-weak: #fdf3e1;
   --warn-text: #92400e;
   --bad: #b91c1c;
+  --bad-weak: #fdecec;
+  --bad-text: #991b1b;
+  --scrim: rgb(0 0 0 / 0.72);
+  --status-ok-bg: #166534;
+  --status-caution-bg: #92400e;
+  --status-ng-bg: #991b1b;
   --pr: #a16207;
   --tabbar-h: 56px;
   --shadow-timer: 0 -4px 12px rgb(0 0 0 / 0.08);
@@ -43,6 +49,8 @@
     --warn-weak: #33280f;
     --warn-text: #fbbf24;
     --bad: #f87171;
+    --bad-weak: #3a1717;
+    --bad-text: #fca5a5;
     --pr: #facc15;
     --shadow-timer: 0 -4px 12px rgb(0 0 0 / 0.4);
   }
@@ -79,7 +87,7 @@ button, input, select, textarea {
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -132,7 +140,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
   color: var(--muted);
   padding: 32px 16px;
   border: 1px dashed var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
 }
 
 .tabbar {
