@@ -131,6 +131,8 @@ export interface AppData {
   schedule?: Schedule
   /** 動画フォーム採点の基準（自分の良いフォームの可動域）。種目キーごと */
   formBaselines?: Partial<Record<string, { romDeg: number; minAngle: number; maxAngle: number; savedAt: string }>>
+  /** フォーム解析の要約の履歴（新しい順、最大 200 件）。原因判定の手がかりに使う */
+  formSessions?: import('./form/types').FormSessionSummary[]
 }
 
 /** 各画面に渡す props */
