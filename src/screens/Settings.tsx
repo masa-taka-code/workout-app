@@ -6,11 +6,15 @@ import { WEEKLY_MAX, WEEKLY_MIN, localToday, weeklyTarget } from '../logic'
 import { defaultData } from '../storage'
 import { exportFileName, parseBackup, serialize } from '../backup'
 import { playTest } from '../sound'
+import { toIcs } from '../schedule'
 import './Settings.css'
 
 const REST_OPTIONS = [60, 90, 120, 150, 180, 240]
 const EXPORT_KEY = 'workout-app:last-export'
 const STALE_DAYS = 14
+const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]
+const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
+const DEFAULT_TIME = '19:00'
 
 const formatRest = (sec: number) => {
   const m = Math.floor(sec / 60)
@@ -60,6 +64,53 @@ export default function Settings({ data, setData }: ScreenProps) {
   const resetTargets = () => {
     if (!window.confirm(`すべての週目標を${WEEKLY_MIN}セットに戻します。よろしいですか？`)) return
     setData(prev => ({ ...prev, weeklyTargets: {} }))
+  }
+
+  const scheduleDays = data.schedule?.days ?? []
+  const scheduleTime = data.schedule?.time ?? DEFAULT_TIME
+  const saveSchedule = (days: number[], time: string) =>
+    setData(prev => {
+      if (days.length === 0) return { ...prev, schedule: undefined }
+      return { ...prev, schedule: { days: [...days].sort((a, b) => a - b), time } }
+    })
+  const toggleDay = (d: number) =>
+    saveSchedule(scheduleDays.includes(d) ? scheduleDays.filter(x => x !== d) : [...scheduleDays, d], scheduleTime)
+  const changeTime = (time: string) => {
+    if (time) saveSchedule(scheduleDays, time)
+  }
+
+  const exportIcs = async () => {
+    setError(undefined)
+    setMessage(undefined)
+    try {
+      const ics = toIcs({ days: scheduleDays, time: scheduleTime }, localToday(), new Date())
+      if (!ics) return
+      const name = 'workout-schedule.ics'
+      const blob = new Blob([ics], { type: 'text/calendar' })
+      const file = new File([blob], name, { type: 'text/calendar' })
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file] })
+        } catch (err) {
+          if (err instanceof DOMException && err.name === 'AbortError') return
+          throw err
+        }
+      } else {
+        const url = URL.createObjectURL(blob)
+        try {
+          const a = document.createElement('a')
+          a.href = url
+          a.download = name
+          document.body.appendChild(a)
+          a.click()
+          a.remove()
+        } finally {
+          setTimeout(() => URL.revokeObjectURL(url), 1000)
+        }
+      }
+    } catch {
+      setError('カレンダー用のファイルを作れませんでした')
+    }
   }
 
   const markExported = () => {
@@ -163,6 +214,23 @@ export default function Settings({ data, setData }: ScreenProps) {
       </div>
 
       <div className="card">
+        <h2 className="card-title">トレーニング予定</h2>
+        <div className="set-days" role="group" aria-label="トレーニングする曜日">
+          {WEEK_ORDER.map(d => (
+            <button key={d} type="button" className="btn" aria-pressed={scheduleDays.includes(d)} onClick={() => toggleDay(d)}>
+              {DAY_LABELS[d]}
+            </button>
+          ))}
+        </div>
+        <label className="set-time">
+          <span className="set-sound-label">開始時刻</span>
+          <input type="time" value={scheduleTime} onChange={e => changeTime(e.target.value)} />
+        </label>
+        <button type="button" className="btn" disabled={scheduleDays.length === 0} onClick={exportIcs}>カレンダーに登録（.ics）</button>
+        <p className="muted">iPhone の Web アプリは予約通知ができないため、カレンダーに登録して通知してもらいます。予定を変えたら登録し直してください。</p>
+      </div>
+
+      <div className="card">
         <h2 className="card-title">週の目標セット数</h2>
         <div className="stack">
           {MUSCLES.map(m => {
@@ -177,7 +245,7 @@ export default function Settings({ data, setData }: ScreenProps) {
             )
           })}
         </div>
-        <p className="muted">目標達成率80%以上が3週続くと自動で+1されます</p>
+        <p className="muted">毎週、種目後の振り返りに合わせて±1（振り返りがなければ達成率80%以上が3週続くと+1）、10〜20の範囲で自動調整されます</p>
         <button type="button" className="btn" onClick={resetTargets}>すべて{WEEKLY_MIN}に戻す</button>
       </div>
 

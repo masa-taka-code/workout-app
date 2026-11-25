@@ -4,6 +4,7 @@
  * 1. 種目ごと（毎回）: RIR で補正したダブルプログレッション
  * 2. 筋肉ごと（週単位）: 部分セット数（主働筋 1・補助筋 0.5）を 10〜20 に収める
  */
+import { isCalibrationDue, rirBias } from './calibration'
 import type { AppData, Condition, Entry, Exercise, Muscle, Session, SetLog, Target } from './types'
 
 export const WEEKLY_MIN = 10
@@ -78,18 +79,25 @@ export function historyFor(exerciseId: string, sessions: Session[], before: stri
 // ---------- 1. 種目ごとの目標 ----------
 
 /** 前回の記録から今日の重量・レップを決める（セット数は種目の標準値） */
-export function suggestTarget(ex: Exercise, history: Entry[]): Target {
+export function suggestTarget(ex: Exercise, history: Entry[], bias = 0): Target {
   const base = { sets: ex.sets, rir: ex.targetRir }
   const last = history[0]
   if (!last) {
     return { ...base, kind: 'first', weight: 0, reps: ex.repMin, reason: `初回：${ex.repMin}〜${ex.repMax}回でRIR ${ex.targetRir}で止まる重量を探す` }
   }
 
-  const sets = doneSets(last)
+  // 限界テストのセットは限界まで挙げているので、「目標RIRを残して止めた場合」に換算する
+  // （rir 欄は目標回数の時点での予測なので、ここでは使わない）
+  const sets = doneSets(last).map(s =>
+    s.amrap ? { ...s, reps: Math.max(0, s.reps - ex.targetRir), rir: undefined, measured: true } : { ...s, measured: false },
+  )
+  // 記録された RIR には個人補正を足す（未入力・換算済みは目標RIRとみなすので足さない）
+  const rirOfBiased = (s: SetLog & { measured: boolean }) =>
+    !s.measured && typeof s.rir === 'number' ? s.rir + bias : ex.targetRir
   const topWeight = Math.max(...sets.map(s => s.weight))
   const top = sets.filter(s => s.weight === topWeight)
   // 余力 = 記録した RIR − 目標 RIR（最もきつかったセットで判断）
-  const surplus = Math.min(...top.map(s => rirOf(s, ex))) - ex.targetRir
+  const surplus = Math.min(...top.map(rirOfBiased)) - ex.targetRir
 
   if (top.length >= ex.sets && top.every(s => s.reps >= ex.repMax) && surplus >= 0) {
     const steps = surplus >= 3 ? 2 : 1
@@ -197,8 +205,16 @@ export function planExercise(
   condition: Condition = 'normal',
   plannedToday: Volume = {},
 ): Target {
-  const target = suggestTarget(ex, historyFor(ex.id, data.sessions, today))
+  const history = historyFor(ex.id, data.sessions, today)
+  const { bias } = rirBias(ex.id, data, today)
+  const target = suggestTarget(ex, history, bias)
   const notes: string[] = []
+  if (bias !== 0) {
+    const n = Math.abs(bias)
+    notes.push(bias > 0 ? `RIR補正 +${n}（あなたは余力を少なめに見積もる傾向）` : `RIR補正 −${n}（多めに見積もる傾向）`)
+  }
+  const amrap = (target.kind === 'reps' || target.kind === 'increase') && isCalibrationDue(ex, history)
+  if (amrap) notes.push('最終セットは限界テスト')
 
   let sets = target.sets
   if (target.kind !== 'deload') {
@@ -221,5 +237,5 @@ export function planExercise(
     notes.push(`1回あたり${SESSION_CAP}セットの上限`)
   }
 
-  return { ...target, sets, reason: [target.reason, ...notes].join('／'), ...(caution ? { caution } : {}) }
+  return { ...target, sets, reason: [target.reason, ...notes].join('／'), ...(caution ? { caution } : {}), ...(amrap ? { amrap: true } : {}) }
 }

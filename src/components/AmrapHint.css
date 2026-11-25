@@ -1,0 +1,9 @@
+.amrap-hint {
+  margin: 6px 0;
+  padding: 4px 0 4px 10px;
+  border-left: 3px solid var(--warn);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.amrap-hint p { margin: 0; }
+.amrap-hint-result { margin-top: 4px; font-weight: 600; }

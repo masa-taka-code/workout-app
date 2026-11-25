@@ -80,7 +80,7 @@ export default function Analysis({ data }: ScreenProps) {
           ))
         )}
         <p className="muted analysis-note">
-          主働筋1、補助筋0.5で数えています。目標は達成率80%以上が3週続くと+1されます（上限20）。
+          主働筋1、補助筋0.5で数えています。目標は毎週、種目後の振り返りに合わせて±1（振り返りがなければ達成率80%以上が3週続くと+1）、10〜20の範囲で自動調整されます。
         </p>
       </div>
 

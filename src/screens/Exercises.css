@@ -31,3 +31,11 @@
 /* レップ範囲：下限〜上限を横一列に */
 .ex-range { display: flex; align-items: center; gap: 8px; }
 .ex-range input { flex: 1 1 0; width: 0; text-align: center; }
+
+/* カタログから選ぶ */
+.ex-head { flex-wrap: wrap; }
+.ex-head .screen-title { flex: 1 1 auto; }
+.ex-cat-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+.ex-cat-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ex-cat-row .btn { min-height: 44px; flex-shrink: 0; }
+.ex-cat-badge { margin-left: 6px; }

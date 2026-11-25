@@ -29,6 +29,29 @@ describe('基本計算', () => {
   })
 })
 
+describe('限界テストのセットの換算', () => {
+  // ダンベル種目：8〜12回、目標RIR 1
+  const curl: Exercise = { ...bench, id: 'curl', repMin: 8, repMax: 12, increment: 1, targetRir: 1, equipment: 'dumbbell' }
+  const amrap = (weight: number, reps: number, rir: number): SetLog => ({ weight, reps, done: true, rir, amrap: true })
+
+  it('限界まで挙げた回数を「目標RIRを残した回数」に換算し、上限到達なら重量を上げる', () => {
+    // 12,12 と、限界テストで合計13回（目標RIR1を残すと12回）→ 全セット上限到達
+    const t = suggestTarget(curl, [entry([s(10, 12, 1), s(10, 12, 1), amrap(10, 13, 0)])])
+    expect(t).toMatchObject({ kind: 'increase', weight: 11 })
+  })
+
+  it('限界テストの rir 欄（目標回数時点の予測）は余力の判定に使わない', () => {
+    // 予測 RIR 0 と入力していても、換算後は目標RIRどおりとみなす
+    const t = suggestTarget(curl, [entry([s(10, 12, 1), s(10, 12, 1), amrap(10, 14, 0)])])
+    expect(t.kind).toBe('increase')
+  })
+
+  it('換算後に上限へ届かなければ同重量でレップを伸ばす', () => {
+    const t = suggestTarget(curl, [entry([s(10, 12, 1), s(10, 12, 1), amrap(10, 12, 0)])])
+    expect(t).toMatchObject({ kind: 'reps', weight: 10, reps: 12 })
+  })
+})
+
 describe('種目ごとの目標', () => {
   it('記録がなければ初回の案内', () => {
     expect(suggestTarget(bench, []).kind).toBe('first')
@@ -98,5 +121,43 @@ describe('今日の計画', () => {
   it('1回あたりの上限を守る', () => {
     const d = data([])
     expect(planExercise(bench, d, '2026-11-24', 'normal', { 胸: 8 }).sets).toBe(2)
+  })
+})
+
+describe('RIR の個人補正', () => {
+  const full = [entry([s(60, 10, 1), s(60, 10, 1), s(60, 10, 1)])]
+
+  it('補正 +1 なら記録 RIR 1 でも目標RIR 2 とみなして重量を上げる（補正なしなら上げない）', () => {
+    expect(suggestTarget(bench, full).kind).toBe('reps')
+    expect(suggestTarget(bench, full, 1)).toMatchObject({ kind: 'increase', weight: 62.5 })
+  })
+
+  it('未入力の RIR には補正を足さない', () => {
+    const t = suggestTarget(bench, [entry([s(60, 10), s(60, 10), s(60, 10)])], -1)
+    expect(t.kind).toBe('increase')
+  })
+
+  it('planExercise は補正を理由に書き、4回目に限界テストを返す', () => {
+    const dumbbell: Exercise = { ...bench, equipment: 'dumbbell' }
+    const amrapSet: SetLog = { weight: 60, reps: 10, done: true, rir: 1, amrap: true }
+    const tgt = { kind: 'reps' as const, weight: 60, reps: 8, sets: 3, rir: 2, reason: '' }
+    const past = [
+      session('2026-10-01', [entry([s(60, 8, 2), s(60, 8, 2), amrapSet], tgt)]), // 誤差 (10-8)-1 = +1
+      session('2026-10-08', [entry([s(60, 8, 2), s(60, 8, 2), amrapSet], tgt)]),
+      session('2026-10-15', [entry([s(60, 8, 2), s(60, 8, 2), s(60, 8, 2)])]),
+    ]
+    const d = { ...data(past), exercises: [dumbbell] }
+    const t = planExercise(dumbbell, d, '2026-10-22')
+    expect(t.amrap).toBe(true)
+    expect(t.reason).toContain('RIR補正 +1（あなたは余力を少なめに見積もる傾向）')
+    expect(t.reason).toContain('最終セットは限界テスト')
+  })
+
+  it('初回・デロードの日とバーベルは限界テストにしない', () => {
+    const dumbbell: Exercise = { ...bench, equipment: 'dumbbell' }
+    expect(planExercise(dumbbell, { ...data([]), exercises: [dumbbell] }, '2026-10-22').amrap).toBeUndefined()
+    const past = [1, 2, 3].map(i => session(`2026-10-0${i}`, [entry([s(60, 8, 2), s(60, 8, 2), s(60, 8, 2)])]))
+    const barbell: Exercise = { ...bench, equipment: 'barbell' }
+    expect(planExercise(barbell, { ...data(past), exercises: [barbell] }, '2026-10-22').amrap).toBeUndefined()
   })
 })
