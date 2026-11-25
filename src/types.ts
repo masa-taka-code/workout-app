@@ -52,6 +52,30 @@ export interface SetLog {
   rir?: number
   /** セットごとのメモ（痛み・感覚など） */
   note?: string
+  /**
+   * 限界テストのセット。目標回数の時点で RIR を予測して rir に記録し、そのまま限界まで続けて reps に総回数を記録する。
+   * 誤差 = (reps − target.reps) − rir
+   */
+  amrap?: boolean
+}
+
+/** 種目を終えたあとの振り返り（0〜2 の3段階） */
+export interface Feedback {
+  /** パンプ：0 弱い / 1 ふつう / 2 強い */
+  pump?: 0 | 1 | 2
+  /** きつさ：0 楽 / 1 ちょうど / 2 きつい */
+  workload?: 0 | 1 | 2
+  /** 前回この種目をやったあとの筋肉痛：0 なし / 1 ちょうど回復 / 2 まだ残っている */
+  soreness?: 0 | 1 | 2
+  /** 関節の痛みがあったか */
+  joint?: boolean
+}
+
+export interface Schedule {
+  /** トレーニングする曜日（0=日〜6=土） */
+  days: number[]
+  /** 開始時刻 HH:MM */
+  time: string
 }
 
 export type TargetKind = 'first' | 'increase' | 'reps' | 'deload'
@@ -66,6 +90,8 @@ export interface Target {
   reason: string
   /** 注意表示（不調の日など）。量は変えない */
   caution?: string
+  /** 最終セットを限界テスト（RIR の答え合わせ）にする */
+  amrap?: boolean
 }
 
 export type Condition = 'good' | 'normal' | 'bad'
@@ -75,6 +101,7 @@ export interface Entry {
   sets: SetLog[]
   /** このセッション開始時に提示された目標（達成率の計算に使う） */
   target?: Target
+  feedback?: Feedback
 }
 
 export interface Session {
@@ -98,6 +125,8 @@ export interface AppData {
   lastRampWeek?: string
   /** 休憩終了の音を鳴らすか（未設定は鳴らす） */
   sound?: boolean
+  /** トレーニングの予定（曜日と時刻） */
+  schedule?: Schedule
 }
 
 /** 各画面に渡す props */

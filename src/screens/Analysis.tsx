@@ -6,6 +6,7 @@ import {
 } from '../stats'
 import type { ScreenProps } from '../types'
 import './Analysis.css'
+import WeeklyReview from '../components/WeeklyReview'
 
 const STORAGE_KEY = 'workout-app:analysis-exercise'
 
@@ -61,6 +62,7 @@ export default function Analysis({ data }: ScreenProps) {
 
   return (
     <section className="screen stack">
+      <WeeklyReview data={data} today={today} />
       <div className="card">
         <h2 className="card-title">今週のボリューム</h2>
         {muscles.length === 0 ? (

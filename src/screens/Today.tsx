@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Condition, Entry, Exercise, ScreenProps, Session, SetLog } from '../types'
+import type { AppData, Condition, Entry, Exercise, ScreenProps, Session, SetLog } from '../types'
 import { BODY_PARTS } from '../types'
 import { achieved, addVolume, bestE1rm, doneSets, historyFor, localToday, planExercise } from '../logic'
 import type { Volume } from '../logic'
@@ -8,6 +8,10 @@ import NumInput from '../components/NumInput'
 import RestTimer from '../components/RestTimer'
 import SetNote from '../components/SetNote'
 import WarmupPanel from '../components/WarmupPanel'
+import AmrapHint from '../components/AmrapHint'
+import FeedbackPanel from '../components/FeedbackPanel'
+import SubstitutePanel from '../components/SubstitutePanel'
+import type { ReplaceWith } from '../components/SubstitutePanel'
 import { useWakeLock } from '../hooks/useWakeLock'
 import { primeAudio } from '../sound'
 
@@ -56,22 +60,46 @@ export default function Today({ data, setData }: ScreenProps) {
   const updateSetLog = (exerciseId: string, i: number, patch: Partial<SetLog>) =>
     updateEntry(exerciseId, e => ({ ...e, sets: e.sets.map((s, j) => (j === i ? { ...s, ...patch } : s)) }))
 
-  const addExercise = (ex: Exercise) => {
-    const byId = new Map(data.exercises.map(e => [e.id, e]))
+  /** 今日の計画から新しい Entry を作る。exceptId の種目は「今日すでに組んだ量」から除く（入れ替え用） */
+  const buildEntry = (ex: Exercise, appData: AppData, exceptId?: string): Entry => {
+    const byId = new Map(appData.exercises.map(e => [e.id, e]))
     let planned: Volume = {}
     for (const e of session?.entries ?? []) {
+      if (e.exerciseId === exceptId) continue
       const other = byId.get(e.exerciseId)
       if (other) planned = addVolume(planned, other, e.target?.sets ?? e.sets.length)
     }
-    const target = planExercise(ex, data, today, condition, planned)
+    const target = planExercise(ex, appData, today, condition, planned)
     const weight = target.kind === 'first' ? 0 : target.weight
-    const entry: Entry = {
-      exerciseId: ex.id,
-      target,
-      sets: Array.from({ length: target.sets }, () => ({ weight, reps: target.reps, done: false })),
-    }
+    const sets: SetLog[] = Array.from({ length: target.sets }, () => ({ weight, reps: target.reps, done: false }))
+    // 限界テストの日は最終セットを限界テストにする
+    if (target.amrap && sets.length > 0) sets[sets.length - 1] = { ...sets[sets.length - 1], amrap: true }
+    return { exerciseId: ex.id, target, sets }
+  }
+
+  const addExercise = (ex: Exercise) => {
+    const entry = buildEntry(ex, data)
     updateSession(s => ({ ...s, entries: [...s.entries, entry] }))
     setPicking(false)
+  }
+
+  /** 今日のこの種目を別の種目に入れ替える（未登録の種目なら種目一覧にも追加する） */
+  const replaceExercise = (from: Exercise, next: ReplaceWith) => {
+    const existing = 'id' in next ? next : data.exercises.find(e => e.name === next.name)
+    const ex: Exercise = existing ?? { ...next, id: uid() }
+    if (ex.id !== from.id && session?.entries.some(e => e.exerciseId === ex.id)) {
+      alert(`「${ex.name}」はすでに今日のメニューにあります`)
+      return
+    }
+    const nextData = existing ? data : { ...data, exercises: [...data.exercises, ex] }
+    const entry = buildEntry(ex, nextData, from.id)
+    setData(prev => ({
+      ...prev,
+      exercises: existing ? prev.exercises : [...prev.exercises, ex],
+      sessions: prev.sessions.map(s =>
+        s.date === today ? { ...s, entries: s.entries.map(e => (e.exerciseId === from.id ? entry : e)) } : s,
+      ),
+    }))
   }
 
   const toggleDone = (ex: Exercise, entry: Entry, i: number) => {
@@ -143,6 +171,7 @@ export default function Today({ data, setData }: ScreenProps) {
                 <p className="muted small">{t.reason}</p>
                 {t.caution && <p className="target-caution">{t.caution}</p>}
                 <WarmupPanel ex={ex} target={t} />
+                <SubstitutePanel ex={ex} entry={entry} data={data} onReplace={next => replaceExercise(ex, next)} />
               </>
             )}
             {prev && <p className="muted">前回 {prev}</p>}
@@ -190,6 +219,7 @@ export default function Today({ data, setData }: ScreenProps) {
                     </button>
                   ))}
                 </div>
+                <AmrapHint set={s} target={t} />
                 <SetNote
                   value={s.note}
                   label={`${i + 1}セット目のメモ`}
@@ -228,6 +258,10 @@ export default function Today({ data, setData }: ScreenProps) {
               {best > 0 && <span className="muted">推定1RM {num(Math.round(best * 10) / 10)}kg</span>}
               {best > 0 && prevBest > 0 && best > prevBest && <span className="badge badge-good">自己ベスト</span>}
             </div>
+
+            {allDone && (
+              <FeedbackPanel ex={ex} entry={entry} onChange={feedback => updateEntry(ex.id, e => ({ ...e, feedback }))} />
+            )}
           </article>
         )
       })}

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { ComponentType } from 'react'
 import { useAppData } from './storage'
-import { localToday, rampWeeklyTargets, weekStart } from './logic'
+import { localToday, weekStart } from './logic'
+import { nextWeeklyTargets } from './weekly'
 import type { ScreenProps } from './types'
 import Today from './screens/Today'
 import History from './screens/History'
@@ -39,7 +40,7 @@ export default function App() {
     setData(prev =>
       weekStart(today) === prev.lastRampWeek
         ? prev
-        : { ...prev, weeklyTargets: rampWeeklyTargets(prev, today), lastRampWeek: weekStart(today) },
+        : { ...prev, weeklyTargets: nextWeeklyTargets(prev, today), lastRampWeek: weekStart(today) },
     )
   }, [setData])
 
