@@ -9,6 +9,10 @@ export interface PoseOpts {
   visLeft?: number
   /** 右側の visibility（既定 1） */
   visRight?: number
+  /** squat：かかとの浮き（正規化座標の高さ。既定 0＝足裏がべったり） */
+  heelLift?: number
+  /** squat：すねの前傾（鉛直からの角度。既定 0） */
+  shinLean?: number
 }
 
 type Pt = { x: number; y: number }
@@ -18,8 +22,14 @@ function blank(): Pose {
   return Array.from({ length: 33 }, (): Landmark => ({ x: 0.5, y: 0.5, z: 0, visibility: 1 }))
 }
 
-const LEFT = { shoulder: LM.leftShoulder, elbow: LM.leftElbow, wrist: LM.leftWrist, hip: LM.leftHip, knee: LM.leftKnee, ankle: LM.leftAnkle }
-const RIGHT = { shoulder: LM.rightShoulder, elbow: LM.rightElbow, wrist: LM.rightWrist, hip: LM.rightHip, knee: LM.rightKnee, ankle: LM.rightAnkle }
+const LEFT = {
+  shoulder: LM.leftShoulder, elbow: LM.leftElbow, wrist: LM.leftWrist, hip: LM.leftHip, knee: LM.leftKnee, ankle: LM.leftAnkle,
+  heel: 29, toe: 31,
+}
+const RIGHT = {
+  shoulder: LM.rightShoulder, elbow: LM.rightElbow, wrist: LM.rightWrist, hip: LM.rightHip, knee: LM.rightKnee, ankle: LM.rightAnkle,
+  heel: 30, toe: 32,
+}
 
 type Joints = Partial<Record<keyof typeof LEFT, Pt>>
 
@@ -44,11 +54,20 @@ const TORSO_LEN = 0.25
  */
 export function squatPose(knee: number, torso: number, opts: PoseOpts = {}): Pose {
   const ankle = { x: 0.5, y: 0.9 }
-  const k = { x: ankle.x, y: ankle.y - SEG }
-  // 膝→足首は真下。膝→股関節はそこから knee 度、後ろ側（x が小さい側）
-  const hip = { x: k.x - SEG * Math.sin(knee * RAD), y: k.y + SEG * Math.cos(knee * RAD) }
+  const lean = (opts.shinLean ?? 0) * RAD
+  // 足首→膝は鉛直から lean 度、前（+x）側に傾ける
+  const k = { x: ankle.x + SEG * Math.sin(lean), y: ankle.y - SEG * Math.cos(lean) }
+  // 膝→足首の向きを、後ろ側（x が小さい側）に knee 度回した向きが膝→股関節
+  const dx = -Math.sin(lean)
+  const dy = Math.cos(lean)
+  const c = Math.cos(knee * RAD)
+  const s = Math.sin(knee * RAD)
+  const hip = { x: k.x + SEG * (dx * c - dy * s), y: k.y + SEG * (dx * s + dy * c) }
   const shoulder = { x: hip.x + TORSO_LEN * Math.sin(torso * RAD), y: hip.y - TORSO_LEN * Math.cos(torso * RAD) }
-  return place({ ankle, knee: k, hip, shoulder }, opts)
+  // かかとはつま先の高さから heelLift だけ上げる（つま先は足首の 0.05 下、前へ 0.1）
+  const toe = { x: ankle.x + 0.1, y: ankle.y + 0.05 }
+  const heel = { x: ankle.x - 0.05, y: ankle.y + 0.05 - (opts.heelLift ?? 0) }
+  return place({ ankle, knee: k, hip, shoulder, heel, toe }, opts)
 }
 
 /** ベンチプレス（真横）。elbow = 肘の角度。上腕は鉛直（肩の真下に肘） */
@@ -80,7 +99,10 @@ export function curlPose(elbow: number, upperArm = 0, torso = 0, opts: PoseOpts 
   const ec = Math.cos(elbow * RAD)
   const es = Math.sin(elbow * RAD)
   const wrist = { x: e.x + SEG * (bx * ec + by * es), y: e.y + SEG * (-bx * es + by * ec) }
-  return place({ shoulder, elbow: e, wrist, hip }, opts)
+  const pose = place({ shoulder, elbow: e, wrist, hip }, opts)
+  // 体の向き（+x 側）が分かるよう、鼻を肩の前に置く
+  pose[LM.nose] = { x: shoulder.x + 0.05, y: shoulder.y - 0.1, z: 0, visibility: 1 }
+  return pose
 }
 
 /** 左側の点は left から、右側の点は right から取る */
@@ -159,4 +181,34 @@ export function repPath(o: PathOpts): PathFrame[] {
     hold(holdTop)
   }
   return out
+}
+
+/** 全ての点を x 方向に dx ずらす（体ごと動いたことにする） */
+export function shiftPose(pose: Pose, dx: number): Pose {
+  return pose.map((p) => ({ ...p, x: p.x + dx }))
+}
+
+/**
+ * worldLandmarks（メートル、原点は股関節、y は下向き、z は奥行き）の姿勢。
+ * phi = 真横からのずれ（度）。0 なら肩の線がカメラの奥行き方向（真横）、90 なら画面の横方向（正面）。
+ * 肩幅 0.4m、脚・腕は各区間 leg / arm メートルで真っすぐ下に伸ばす。
+ */
+export function worldPose(phi: number, leg = 0.4, arm = 0.3): Pose {
+  const pose = blank().map((p) => ({ ...p, x: 0, y: 0, z: 0 }))
+  const sx = 0.2 * Math.sin(phi * RAD)
+  const sz = 0.2 * Math.cos(phi * RAD)
+  const sy = -0.5
+  const set = (i: number, x: number, y: number, z: number) => {
+    pose[i] = { x, y, z, visibility: 1 }
+  }
+  set(LM.leftShoulder, -sx, sy, -sz)
+  set(LM.rightShoulder, sx, sy, sz)
+  set(LM.leftElbow, -sx, sy + arm, -sz)
+  set(LM.rightElbow, sx, sy + arm, sz)
+  set(LM.leftWrist, -sx, sy + 2 * arm, -sz)
+  set(LM.rightWrist, sx, sy + 2 * arm, sz)
+  for (const i of [LM.leftHip, LM.rightHip]) set(i, 0, 0, 0)
+  for (const i of [LM.leftKnee, LM.rightKnee]) set(i, 0, leg, 0)
+  for (const i of [LM.leftAnkle, LM.rightAnkle]) set(i, 0, 2 * leg, 0)
+  return pose
 }

@@ -8,8 +8,11 @@ import type {
 } from './types'
 import { CONFIG, MIN_VISIBILITY, SIDE_INDEX, computeAngles, formIssues, makeIssue } from './rules'
 import type { Joint, RepStats, Side } from './rules'
+import { makeFrame, measureRep, median } from './measure'
+import type { MeasureFrame, SetStats } from './measure'
 
-const SMOOTH_ALPHA = 0.5
+/** 外れ値対策の中央値フィルタの窓（直近のフレーム数）。MediaPipe が内部で平滑化するので、それ以上はかけない */
+const MEDIAN_WINDOW = 3
 const SIDE_SWITCH_MARGIN = 0.1
 const START_DROP = 10
 const MIN_MOTION = 30
@@ -50,6 +53,10 @@ interface ActiveRep {
   ranges: Record<string, { min: number; max: number }>
   hipY?: number
   kneeY?: number
+  /** レップ開始からのフレーム（見えなかったものも含む）。計測用 */
+  frames: MeasureFrame[]
+  /** 開始前に最も伸びていたフレーム */
+  lead?: MeasureFrame
 }
 
 const round = (v: number, digits: number): number => {
@@ -62,7 +69,8 @@ export class RepTracker {
   readonly key: FormExerciseKey
   readonly baseline?: Baseline
 
-  private smoothed: Record<string, number> = {}
+  /** 角度ごとの直近フレームの生の値（中央値フィルタ用） */
+  private recent: Record<string, number[]> = {}
   private side?: Side
   private armed = false
   private topPeak = 0
@@ -72,40 +80,60 @@ export class RepTracker {
   private reps: RepResult[] = []
   private firstRom?: number
   private lastCue?: { text: string; t: number }
+  /** 伸びた状態（top）でいちばん角度が大きかったフレーム */
+  private leadFrame?: MeasureFrame
+  private stats: SetStats = { segA: [], segB: [], worldLen: [], firstVelocities: [] }
 
   constructor(key: FormExerciseKey, baseline?: Baseline) {
     this.key = key
     this.baseline = baseline
   }
 
-  /** timeMs は単調増加するミリ秒（performance.now() など） */
-  push(pose: Pose | undefined, timeMs: number): FrameResult {
+  /**
+   * timeMs は単調増加するミリ秒（performance.now() など）。
+   * world は worldLandmarks（メートル。あれば撮影角度と速度の換算に使う。無くても動く）。
+   */
+  push(pose: Pose | undefined, timeMs: number, world?: Pose): FrameResult {
     const cfg = CONFIG[this.key]
+    const prevSide = this.side
     const pts = pose ? this.pickSide(pose, cfg.joints) : undefined
-    if (!pts) return this.result(false, {}, timeMs)
+    if (!pts || !pose || !this.side) {
+      this.rep?.frames.push({ t: timeMs, visible: false })
+      return this.result(false, {}, timeMs)
+    }
+    // 使う側が変わったら別の関節の角度なので、中央値の窓を捨てる
+    if (prevSide && prevSide !== this.side) this.recent = {}
 
     const raw = computeAngles(this.key, pts)
     const angles: Record<string, number> = {}
     for (const name of Object.keys(raw)) {
-      const prev = this.smoothed[name]
-      angles[name] = prev === undefined ? raw[name] : SMOOTH_ALPHA * raw[name] + (1 - SMOOTH_ALPHA) * prev
+      const win = [...(this.recent[name] ?? []), raw[name]].slice(-MEDIAN_WINDOW)
+      this.recent[name] = win
+      angles[name] = median(win) as number
     }
-    this.smoothed = angles
 
     const a = angles[cfg.main]
+    const frame = makeFrame(this.key, { t: timeMs, side: this.side, pts, pose, world, angle: a, angles })
+    if (frame.segA !== undefined && frame.segB !== undefined) {
+      this.stats.segA.push(frame.segA)
+      this.stats.segB.push(frame.segB)
+    }
+    if (frame.worldLen !== undefined) this.stats.worldLen.push(frame.worldLen)
     let liveCue: string | undefined
 
     if (!this.rep) {
       if (a > cfg.top) {
+        if (!this.armed || a > this.topPeak) this.leadFrame = frame
         this.topPeak = this.armed ? Math.max(this.topPeak, a) : a
         this.armed = true
         this.phase = 'top'
       } else if (this.armed && a < cfg.top - START_DROP) {
         this.rep = {
           startT: timeMs, minAngle: Infinity, minT: timeMs, startMax: this.topPeak, ranges: {},
+          frames: [], lead: this.leadFrame,
         }
         this.prevAngle = a
-        this.updateRep(this.rep, angles, a, timeMs, pts)
+        this.updateRep(this.rep, angles, a, timeMs, pts, frame)
         this.phase = 'down'
       } else {
         this.phase = this.armed ? 'top' : 'idle'
@@ -118,11 +146,12 @@ export class RepTracker {
         this.armed = false
         this.phase = 'idle'
       } else {
-        this.updateRep(rep, angles, a, timeMs, pts)
+        this.updateRep(rep, angles, a, timeMs, pts, frame)
         if (a > cfg.top) {
           this.finishRep(rep, a, timeMs)
           this.rep = undefined
           this.topPeak = a
+          this.leadFrame = frame
           this.phase = 'top'
         } else {
           const prev = this.prevAngle ?? a
@@ -139,7 +168,7 @@ export class RepTracker {
   }
 
   reset(): void {
-    this.smoothed = {}
+    this.recent = {}
     this.side = undefined
     this.armed = false
     this.topPeak = 0
@@ -149,6 +178,8 @@ export class RepTracker {
     this.reps = []
     this.firstRom = undefined
     this.lastCue = undefined
+    this.leadFrame = undefined
+    this.stats = { segA: [], segB: [], worldLen: [], firstVelocities: [] }
   }
 
   /** 左右のうち見えている側を選び、必要な関節が全部見えていればその座標を返す */
@@ -173,8 +204,12 @@ export class RepTracker {
     return pts as Record<Joint, Landmark>
   }
 
-  private updateRep(rep: ActiveRep, angles: Record<string, number>, a: number, t: number, pts: Record<Joint, Landmark>) {
-    if (a < rep.minAngle) {
+  private updateRep(
+    rep: ActiveRep, angles: Record<string, number>, a: number, t: number, pts: Record<Joint, Landmark>, frame: MeasureFrame,
+  ) {
+    rep.frames.push(frame)
+    // 同じ値が続くとき（底で止まったとき）は最後のフレームを最下点にする（止まっている間を「上げる動作」に数えない）
+    if (a <= rep.minAngle) {
       rep.minAngle = a
       rep.minT = t
       rep.hipY = pts.hip?.y
@@ -240,6 +275,15 @@ export class RepTracker {
       maxAngle: round(maxAngle, 1),
       issues,
     }
+    const meas = measureRep(
+      this.key, rep.frames, { startT: rep.startT, minT: rep.minT, endT: t }, this.stats, rep.lead,
+    )
+    result.metrics = meas.metrics
+    // 速度低下の基準は最初の2レップ。バー軌道の基準は1レップ目
+    if (meas.velocityNorm !== undefined && this.stats.firstVelocities.length < 2) {
+      this.stats.firstVelocities.push(meas.velocityNorm)
+    }
+    if (this.reps.length === 0 && meas.path) this.stats.firstPath = meas.path
     this.reps.push(result)
 
     const worst = issues.reduce<Issue | undefined>((w, i) => (!w || i.penalty > w.penalty ? i : w), undefined)

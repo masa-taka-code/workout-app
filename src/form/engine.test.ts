@@ -47,11 +47,18 @@ describe('geometry', () => {
     const b = new RepTracker('bench').push(benchPose(120), 0)
     expect(b.angles.elbow).toBeCloseTo(120, 3)
   })
-  it('角度は指数移動平均（α=0.5）で平滑化される', () => {
+  it('角度は直近3フレームの中央値で外れ値だけを除く（2フレームのときは平均）', () => {
     const t = new RepTracker('squat')
     t.push(squatPose(170, 0), 0)
     const f = t.push(squatPose(100, 0), 33)
     expect(f.angles.knee).toBeCloseTo(135, 3)
+    // 1フレームだけ飛んだ値（外れ値）は出てこない
+    t.reset()
+    t.push(squatPose(100, 0), 0)
+    t.push(squatPose(100, 0), 33)
+    expect(t.push(squatPose(170, 0), 66).angles.knee).toBeCloseTo(100, 3)
+    // 続けて変われば追従する
+    expect(t.push(squatPose(170, 0), 99).angles.knee).toBeCloseTo(170, 3)
   })
 })
 
@@ -65,9 +72,10 @@ describe('左右の選択と visibility', () => {
     // 右がわずかに高い（差 0.05）→ 左のまま
     f = t.push(setVisibility(setVisibility(combineSides(left, right), 'left', 0.8), 'right', 0.85), 33)
     expect(f.angles.knee).toBeCloseTo(170, 3)
-    // 右が 0.15 高い → 右へ切り替わり、平滑化で 170 から 100 へ近づく
+    // 右が 0.15 高い → 右へ切り替わる。別の関節の値なので中央値の窓は捨て、右の値（100）がそのまま出る
+    // （平滑化が指数移動平均だった頃は 135 だった。変更前後の値と理由は報告参照）
     f = t.push(setVisibility(setVisibility(combineSides(left, right), 'left', 0.8), 'right', 0.95), 66)
-    expect(f.angles.knee).toBeCloseTo(135, 3)
+    expect(f.angles.knee).toBeCloseTo(100, 3)
   })
   it('最初のフレームは visibility が高い右側を選べる', () => {
     const t = new RepTracker('squat')
