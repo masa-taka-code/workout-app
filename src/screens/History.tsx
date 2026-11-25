@@ -77,6 +77,7 @@ export default function History({ data, setData }: ScreenProps) {
         const month = monthLabel(s.date)
         const heading = i === 0 || monthLabel(shown[i - 1].date) !== month ? month : undefined
         const note = (s.note ?? '').trim()
+        const hasSetNote = entries.some(e => doneSets(e).some(x => (x.note ?? '').trim() !== ''))
 
         return (
           <div key={s.id} className="stack">
@@ -97,6 +98,7 @@ export default function History({ data, setData }: ScreenProps) {
                   <span className="muted">
                     {entries.length}種目・{totalSets}セット・{yen(volume)}kg
                     {s.bodyWeight ? `・体重 ${num(s.bodyWeight)}kg` : ''}
+                    {hasSetNote && <span className="small">・メモあり</span>}
                   </span>
                 </button>
                 <button className="btn btn-ghost" onClick={() => remove(s)}>削除</button>
@@ -109,6 +111,9 @@ export default function History({ data, setData }: ScreenProps) {
                     const t = e.target
                     const ach = achieved(e)
                     const best = ex ? bestE1rm(e, ex) : 0
+                    const noted = e.sets
+                      .map((x, idx) => ({ n: idx + 1, x }))
+                      .filter(({ x }) => x.done && (x.note ?? '').trim() !== '')
                     const rirs = doneSets(e).filter(x => x.rir !== undefined).map(x => x.rir)
                     return (
                       <div key={e.exerciseId} className="hist-entry">
@@ -124,6 +129,13 @@ export default function History({ data, setData }: ScreenProps) {
                               <span className={`badge ${ach ? 'badge-good' : 'badge-warn'}`}>{ach ? '達成' : '未達'}</span>
                             )}
                           </div>
+                        )}
+                        {noted.length > 0 && (
+                          <ul className="hist-set-notes muted small">
+                            {noted.map(({ n, x }) => (
+                              <li key={n}>{n}セット目：{(x.note ?? '').trim()}</li>
+                            ))}
+                          </ul>
                         )}
                         {best > 0 && <span className="muted small">推定1RM {num(best)}kg</span>}
                       </div>

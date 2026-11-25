@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Exercise } from '../types'
-import { BODY_PARTS, MUSCLES } from '../types'
+import { BODY_PARTS, EQUIPMENTS, MUSCLES } from '../types'
 import NumInput from './NumInput'
 import { cycleMuscle, normalizeDraft, validateExercise } from './exerciseValidation'
 import type { ExerciseDraft } from './exerciseValidation'
@@ -50,6 +50,16 @@ export default function ExerciseForm({ initial, others, onSave, onCancel, onDele
           ))}
         </div>
         <Err msg={errors.part} />
+      </div>
+
+      <div className="ex-field">
+        <span className="ex-label">器具</span>
+        <div className="ex-wrap">
+          {EQUIPMENTS.map(q => (
+            <button key={q.value} type="button" className="btn" aria-pressed={draft.equipment === q.value} onClick={() => patch({ equipment: q.value })}>{q.label}</button>
+          ))}
+        </div>
+        <p className="muted small">バーベルはプレート計算、バーベル・ダンベル・マシンはウォームアップを表示します</p>
       </div>
 
       <div className="ex-field">

@@ -1,0 +1,12 @@
+.warmup { border-top: 1px solid var(--border); padding-top: 4px; }
+.warmup summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.warmup-list { display: flex; flex-direction: column; gap: 4px; padding-bottom: 8px; }
+.warmup-line { font-size: 0.9rem; overflow-wrap: anywhere; }
+.warmup-work { font-weight: 600; color: var(--text); }

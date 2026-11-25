@@ -1,0 +1,31 @@
+.set-note-add,
+.set-note-view {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 0 8px;
+  text-align: left;
+}
+.set-note-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.set-note-edit { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.set-note-row { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.set-note-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 10px;
+  font-size: 16px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.set-note-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.set-note-chip { min-height: 44px; padding: 0 10px; border-color: var(--border); }

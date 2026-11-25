@@ -14,6 +14,7 @@ export const newDraft = (): ExerciseDraft => ({
   increment: 2.5,
   sets: 3,
   targetRir: 2,
+  equipment: 'barbell',
   primary: [],
   secondary: [],
 })

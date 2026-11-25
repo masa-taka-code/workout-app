@@ -21,3 +21,4 @@
 .hist-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; overflow-wrap: anywhere; }
 .hist-note { white-space: pre-wrap; overflow-wrap: anywhere; }
 .hist-more { align-self: stretch; }
+.hist-set-notes { list-style: none; margin: 0; padding: 0; overflow-wrap: anywhere; }

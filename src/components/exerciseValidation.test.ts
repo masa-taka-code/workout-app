@@ -48,6 +48,15 @@ describe('validateExercise', () => {
   })
 })
 
+describe('newDraft', () => {
+  it('器具の初期値はバーベル', () => {
+    expect(newDraft().equipment).toBe('barbell')
+  })
+  it('器具が未設定でも検証は通る', () => {
+    expect(validateExercise({ ...ok(), equipment: undefined }, [])).toEqual({})
+  })
+})
+
 describe('cycleMuscle', () => {
   it('なし → 主 → 補助 → なし', () => {
     let d = newDraft()

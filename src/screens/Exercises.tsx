@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Exercise, ScreenProps } from '../types'
-import { BODY_PARTS } from '../types'
+import { BODY_PARTS, EQUIPMENTS } from '../types'
 import { doneSets } from '../logic'
 import { uid } from '../storage'
 import ExerciseForm from '../components/ExerciseForm'
@@ -76,7 +76,7 @@ export default function Exercises({ data, setData }: ScreenProps) {
             {list.map(ex => (
               <button key={ex.id} type="button" className="ex-item" onClick={() => setEditing(ex.id)}>
                 <span className="ex-name">{ex.name}</span>
-                <span className="ex-meta">{ex.repMin}〜{ex.repMax}回・+{ex.increment}kg・{ex.sets}セット・RIR {ex.targetRir}</span>
+                <span className="ex-meta">{EQUIPMENTS.find(q => q.value === (ex.equipment ?? 'other'))?.label}・{ex.repMin}〜{ex.repMax}回・+{ex.increment}kg・{ex.sets}セット・RIR {ex.targetRir}</span>
                 <span className="ex-meta">
                   主：{ex.primary.join('・') || 'なし'}
                   {ex.secondary.length > 0 && `　補助：${ex.secondary.join('・')}`}
