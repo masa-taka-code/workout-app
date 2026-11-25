@@ -1,5 +1,5 @@
 import { weekReview } from '../review'
-import { addDays } from '../logic'
+import { addDays, doneSets, weekStart } from '../logic'
 import { nextScheduled, plannedThisWeek } from '../schedule'
 import type { AppData } from '../types'
 import './WeeklyReview.css'
@@ -15,8 +15,9 @@ const md = (date: string) => `${Number(date.slice(5, 7))}/${Number(date.slice(8,
 
 export default function WeeklyReview({ data, today }: Props) {
   const r = weekReview(data, today)
-  const hasHistory = data.sessions.length > 0
-  if (r.sessions === 0 && !hasHistory) return null
+  // 今週より前に記録がない（使い始めの週）なら振り返るものがないので出さない
+  const hasHistory = data.sessions.some(s => s.date < weekStart(today) && s.entries.some(e => doneSets(e).length > 0))
+  if (!hasHistory) return null
 
   const schedule = data.schedule
   const next = nextScheduled(schedule, today)

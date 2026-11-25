@@ -14,6 +14,27 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
         navigateFallback: 'index.html',
+        // 姿勢推定の wasm とモデルは大きいので precache せず、使ったときにキャッシュする
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/npm\/@mediapipe\/tasks-vision@.*/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'mediapipe',
+              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 90 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/storage\.googleapis\.com\/mediapipe-models\/.*/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'mediapipe',
+              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 90 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
       },
       manifest: {
         name: '筋トレログ',

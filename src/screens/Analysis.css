@@ -20,3 +20,5 @@
 
 .chart-tip { padding: 6px 10px; font-size: 13px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; }
 .chart-box { width: 100%; min-width: 0; }
+.vol-map { display: flex; flex-direction: column; align-items: center; margin-bottom: 12px; }
+.vol-map .analysis-note { margin-top: 4px; }

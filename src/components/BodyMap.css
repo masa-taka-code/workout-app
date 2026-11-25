@@ -1,0 +1,4 @@
+.bodymap { display: flex; flex-direction: column; align-items: center; max-width: 100%; min-width: 0; }
+.bodymap-figures { display: flex; justify-content: center; gap: 16px; max-width: 100%; }
+.bodymap-figures .rbh-wrapper { flex: 0 1 auto; min-width: 0; }
+.bodymap-legend { margin: 4px 0 0; font-size: 11px; color: var(--muted); text-align: center; }

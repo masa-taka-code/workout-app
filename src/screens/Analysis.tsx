@@ -7,6 +7,8 @@ import {
 import type { ScreenProps } from '../types'
 import './Analysis.css'
 import WeeklyReview from '../components/WeeklyReview'
+import BodyMap from '../components/BodyMap'
+import { volumeHighlights } from '../bodymap'
 
 const STORAGE_KEY = 'workout-app:analysis-exercise'
 
@@ -68,7 +70,12 @@ export default function Analysis({ data }: ScreenProps) {
         {muscles.length === 0 ? (
           <p className="empty">記録すると、筋肉ごとの週のセット数がここに出ます</p>
         ) : (
-          muscles.map(m => (
+          <>
+          <div className="vol-map">
+            <BodyMap size="md" highlights={volumeHighlights(muscles)} label="今週のセット数" />
+            <p className="muted analysis-note">濃いほど週の目標に近い</p>
+          </div>
+          {muscles.map(m => (
             <div className="vol-row" key={m.muscle}>
               <span className="vol-name">{m.muscle}</span>
               <div className="vol-track">
@@ -77,7 +84,8 @@ export default function Analysis({ data }: ScreenProps) {
               </div>
               <span className="vol-num">{num(m.volume)} / {num(m.target)}セット</span>
             </div>
-          ))
+          ))}
+          </>
         )}
         <p className="muted analysis-note">
           主働筋1、補助筋0.5で数えています。目標は毎週、種目後の振り返りに合わせて±1（振り返りがなければ達成率80%以上が3週続くと+1）、10〜20の範囲で自動調整されます。

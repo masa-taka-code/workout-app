@@ -1,4 +1,7 @@
+import { useState } from 'react'
 import type { AppData, Entry, Exercise } from '../types'
+import { formKeyFor } from '../form/engine'
+import FormCheck from './FormCheck'
 
 export interface FormCheckButtonProps {
   ex: Exercise
@@ -10,7 +13,25 @@ export interface FormCheckButtonProps {
   onSaveBaseline: (key: string, baseline: { romDeg: number; minAngle: number; maxAngle: number }) => void
 }
 
-// 仮。implementer が「フォームを撮影」ボタンと撮影画面を実装する。
-export default function FormCheckButton(_props: FormCheckButtonProps) {
-  return null
+export default function FormCheckButton({ ex, data, onApply, onSaveBaseline }: FormCheckButtonProps) {
+  const [open, setOpen] = useState(false)
+  const key = formKeyFor(ex)
+  if (!key) return null
+  return (
+    <>
+      <button type="button" className="btn btn-ghost" onClick={() => setOpen(true)}>
+        フォームを撮影（β）
+      </button>
+      {open && (
+        <FormCheck
+          ex={ex}
+          formKey={key}
+          baseline={data.formBaselines?.[key]}
+          onApply={onApply}
+          onSaveBaseline={onSaveBaseline}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  )
 }
