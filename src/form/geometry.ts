@@ -25,3 +25,13 @@ export function tiltFromVertical(from: Pt, to: Pt): number {
   if (dx === 0 && dy === 0) return 0
   return Math.atan2(Math.abs(dx), -dy) * RAD
 }
+
+/**
+ * MediaPipe の正規化座標は x を画像の幅、y を画像の高さで割った値なので、
+ * そのまま角度を計算すると縦横比のぶんだけゆがむ（縦長 3:4 で膝 115° が 101° に見える等）。
+ * x に幅÷高さを掛けて、縦横を同じ尺度にそろえる。y・z・visibility はそのまま。
+ */
+export function toAspectCorrected<T extends { x: number }>(pose: T[], aspect: number): T[] {
+  if (!(aspect > 0) || aspect === 1) return pose
+  return pose.map(p => ({ ...p, x: p.x * aspect }))
+}

@@ -374,3 +374,29 @@ describe('formKeyFor / setupGuide', () => {
     expect(setupGuide('squat')).toContain('真横')
   })
 })
+
+describe('縦横比の補正', () => {
+  it('縦長 3:4 の映像で、補正しないと膝角度がずれ、補正すると実際の角度に戻る', async () => {
+    const { jointAngle, toAspectCorrected } = await import('./geometry')
+    const W = 3, H = 4 // 画像の幅と高さ（同じ単位）
+    // 実空間で膝が 115° に曲がった3点（股関節・膝・足首）
+    const rad = (115 * Math.PI) / 180
+    const knee = { x: 1.5, y: 2.4 }
+    const hip = { x: knee.x - 0.8, y: knee.y }
+    const ankle = { x: knee.x - 0.8 * Math.cos(rad), y: knee.y + 0.8 * Math.sin(rad) }
+    expect(Math.round(jointAngle(hip, knee, ankle))).toBe(115)
+    // MediaPipe と同じく、x を幅・y を高さで割って正規化する
+    const norm = [hip, knee, ankle].map(p => ({ x: p.x / W, y: p.y / H }))
+    expect(Math.abs(jointAngle(norm[0], norm[1], norm[2]) - 115)).toBeGreaterThan(5)
+    const fixed = toAspectCorrected(norm, W / H)
+    expect(Math.round(jointAngle(fixed[0], fixed[1], fixed[2]))).toBe(115)
+  })
+
+  it('正方形（縦横比 1）や不正な値では何もしない', async () => {
+    const { toAspectCorrected } = await import('./geometry')
+    const pose = [{ x: 0.3, y: 0.4 }]
+    expect(toAspectCorrected(pose, 1)).toBe(pose)
+    expect(toAspectCorrected(pose, 0)).toBe(pose)
+    expect(toAspectCorrected(pose, Number.NaN)).toBe(pose)
+  })
+})

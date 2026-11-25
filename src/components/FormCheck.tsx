@@ -5,6 +5,7 @@ import type { Baseline, FormExerciseKey, RepResult } from '../form/types'
 import { RepTracker, baselineFrom, setupGuide, summarizeSet } from '../form/engine'
 import { detect, loadPoseLandmarker, resetPoseLandmarker } from '../form/pose'
 import { colorForScore, drawSkeleton } from '../form/draw'
+import { toAspectCorrected } from '../form/geometry'
 import { exerciseHighlights } from '../bodymap'
 import BodyMap from './BodyMap'
 import './FormCheck.css'
@@ -146,7 +147,8 @@ export default function FormCheck({ ex, formKey, baseline, onApply, onSaveBaseli
       const pose = detect(lm, video, now)
       let angles: Record<string, number> = {}
       if (measuringRef.current) {
-        const frame = tracker.push(pose, now)
+        // 角度は縦横比をそろえた座標で計算する（描画は元の正規化座標のまま）
+        const frame = tracker.push(pose && toAspectCorrected(pose, video.videoWidth / video.videoHeight), now)
         angles = frame.angles
         lastScoreRef.current = frame.reps[frame.reps.length - 1]?.score
         const prev = liveRef.current
