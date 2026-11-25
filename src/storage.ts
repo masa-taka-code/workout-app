@@ -42,13 +42,17 @@ function normalizeExercise(e: Partial<Exercise> & { id: string; name: string }):
   }
 }
 
+/** 読み込んだ JSON を AppData に整える。形式が違えば undefined（読み込みと JSON インポートで共用） */
+export function normalizeData(parsed: unknown): AppData | undefined {
+  if (!isAppData(parsed)) return undefined
+  return { ...defaultData(), ...parsed, exercises: parsed.exercises.map(normalizeExercise) }
+}
+
 export function loadData(): AppData {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return defaultData()
-    const parsed = JSON.parse(raw) as AppData
-    if (!isAppData(parsed)) return defaultData()
-    return { ...defaultData(), ...parsed, exercises: parsed.exercises.map(normalizeExercise) }
+    return normalizeData(JSON.parse(raw)) ?? defaultData()
   } catch {
     return defaultData()
   }

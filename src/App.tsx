@@ -1,15 +1,29 @@
 import { useEffect, useState } from 'react'
+import type { ComponentType } from 'react'
 import { useAppData } from './storage'
 import { localToday, rampWeeklyTargets, weekStart } from './logic'
+import type { ScreenProps } from './types'
 import Today from './screens/Today'
+import History from './screens/History'
 import Analysis from './screens/Analysis'
+import Exercises from './screens/Exercises'
+import Settings from './screens/Settings'
 
-type Tab = 'today' | 'analysis'
+const TABS = [
+  { id: 'today', label: '記録', Screen: Today },
+  { id: 'history', label: '履歴', Screen: History },
+  { id: 'analysis', label: '分析', Screen: Analysis },
+  { id: 'exercises', label: '種目', Screen: Exercises },
+  { id: 'settings', label: '設定', Screen: Settings },
+] as const satisfies readonly { id: string; label: string; Screen: ComponentType<ScreenProps> }[]
+
+type Tab = (typeof TABS)[number]['id']
 const TAB_KEY = 'workout-app:tab'
 
 function loadTab(): Tab {
   try {
-    return localStorage.getItem(TAB_KEY) === 'analysis' ? 'analysis' : 'today'
+    const saved = localStorage.getItem(TAB_KEY)
+    return TABS.find(t => t.id === saved)?.id ?? 'today'
   } catch {
     return 'today'
   }
@@ -27,8 +41,7 @@ export default function App() {
         ? prev
         : { ...prev, weeklyTargets: rampWeeklyTargets(prev, today), lastRampWeek: weekStart(today) },
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [setData])
 
   const select = (t: Tab) => {
     setTab(t)
@@ -39,12 +52,17 @@ export default function App() {
     }
   }
 
+  const { Screen } = TABS.find(t => t.id === tab) ?? TABS[0]
+
   return (
     <>
-      {tab === 'today' ? <Today data={data} setData={setData} /> : <Analysis data={data} setData={setData} />}
+      <Screen data={data} setData={setData} />
       <nav className="tabbar" aria-label="メニュー">
-        <button aria-current={tab === 'today' ? 'page' : undefined} onClick={() => select('today')}>記録</button>
-        <button aria-current={tab === 'analysis' ? 'page' : undefined} onClick={() => select('analysis')}>分析</button>
+        {TABS.map(t => (
+          <button key={t.id} aria-current={tab === t.id ? 'page' : undefined} onClick={() => select(t.id)}>
+            {t.label}
+          </button>
+        ))}
       </nav>
     </>
   )
