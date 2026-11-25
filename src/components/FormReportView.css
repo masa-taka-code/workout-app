@@ -29,7 +29,7 @@
 .frv-summary::-webkit-details-marker { display: none; }
 .frv-summary::after { content: '▸'; color: var(--muted); flex: none; }
 .frv-section[open] > .frv-summary::after { content: '▾'; }
-.frv-summary-title { font-weight: 700; font-size: 1.05rem; min-width: 0; overflow-wrap: anywhere; }
+.frv-summary-title { font-weight: 700; font-size: 1.05rem; flex: none; white-space: nowrap; }
 .frv-summary-hint { margin-left: auto; color: var(--muted); font-size: 14px; text-align: right; min-width: 0; overflow-wrap: anywhere; }
 .frv-body { display: flex; flex-direction: column; gap: 12px; padding: 0 12px 12px; min-width: 0; }
 
