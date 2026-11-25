@@ -27,7 +27,9 @@ export const LM = {
 } as const
 
 /** 採点に対応している種目（真横から撮影） */
-export type FormExerciseKey = 'squat' | 'bench' | 'curl'
+export type FormExerciseKey =
+  | 'squat' | 'bench' | 'curl'
+  | 'rdl' | 'ohp' | 'lateral' | 'pulldown' | 'ohext' | 'bss'
 
 export type Phase = 'idle' | 'top' | 'down' | 'bottom' | 'up'
 
@@ -145,6 +147,23 @@ export interface RepMetrics {
   torsoRange?: number
   /** 最下点（伸ばしきり）での肩の角度：上腕と体幹のなす角（後ろ＝マイナス、前＝プラス。度） */
   shoulderAngleAtBottom?: number
+  // --- rdl / ohp / lateral / pulldown / ohext / bss（追加6種目） ---
+  /** 最下点の股関節屈曲（度、180 − 肩-股関節-膝の内角）。rdl */
+  hipFlexionBottom?: number
+  /** 最下点の膝の内角（度）。rdl（膝の曲げすぎの判定用） */
+  kneeAngleBottom?: number
+  /** レップ中の体幹の後傾の最大（鉛直から後ろへの角度、前傾は 0）。ohp・pulldown */
+  trunkLeanBack?: number
+  /** そのレップの開始時（top の時点）の後傾。ohp（反りの増加を見る） */
+  trunkLeanBackBaseline?: number
+  /** レップ中の肩外転の最大（左右の大きい方、度）。lateral */
+  abductionTop?: number
+  /** 上げきった時点の左右の外転角の差（度）。lateral（参考表示のみ） */
+  abductionAsymmetry?: number
+  /** 最下点の肘の屈曲（度、180 − 肘の内角）。ohext・ohp */
+  elbowFlexionBottom?: number
+  /** レップの開始・終了時（伸ばしきり側）の肘の内角の最大（度）。pulldown */
+  elbowExtensionTop?: number
 }
 
 /** 原因の種類 */

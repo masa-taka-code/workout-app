@@ -171,3 +171,43 @@ describe('inferCauses：確信度の上限', () => {
     expect(bench[0].confidence).toBe('high')
   })
 })
+
+describe('inferCauses：追加6種目', () => {
+  it('knee-bend：技術だけが候補、確信度は最大 mid', () => {
+    const cs = inferCauses('knee-bend', [1, 2], usable(6), ctx({ key: 'rdl' }), [])
+    expect(cs.map(c => c.cause)).toEqual(['technique'])
+    expect(cs[0].confidence).not.toBe('high')
+  })
+
+  it('lean-back：後半だけなら fatigue、mobility・structure は出さない', () => {
+    const cs = inferCauses('lean-back', [5, 6], usable(6, [0, 0, 0, 0, 25, 30]), ctx({ key: 'ohp' }), [])
+    expect(cs[0]).toMatchObject({ cause: 'fatigue', confidence: 'mid' })
+    expect(cs.every(c => ['load', 'fatigue', 'technique'].includes(c.cause))).toBe(true)
+  })
+
+  it('lean-back：1〜2レップ目から出るなら technique だけ', () => {
+    const cs = inferCauses('lean-back', [1, 2], usable(6), ctx({ key: 'ohp' }), [])
+    expect(cs.map(c => c.cause)).toEqual(['technique'])
+  })
+
+  it('shallow-hinge：mobility・technique などが候補（strength・structure は出さない）', () => {
+    const cs = inferCauses('shallow-hinge', [1, 2], usable(6), ctx({ key: 'rdl' }), [])
+    expect(cs.map(c => c.cause)).toEqual(['mobility', 'technique'])
+  })
+
+  it('elbow-drift：重い日だけなら load', () => {
+    const c = ctx({ key: 'ohext', weight: 20, recentBestWeight: 20, history: [hist(10, 0, 5, 'elbow-drift'), hist(10, 0, 5, 'elbow-drift')] })
+    const cs = inferCauses('elbow-drift', [1, 2, 3], usable(6), c, [])
+    expect(find(cs, 'load')).toBeDefined()
+    expect(find(cs, 'strength')).toBeUndefined()
+  })
+
+  it('bss の shallow：基準なしは確信度 low まで。基準ありは high になりうる', () => {
+    const base = { key: 'bss' as const }
+    const noBase = inferCauses('shallow', [1, 2], usable(6), ctx(base), [])
+    expect(noBase.every(c => c.confidence === 'low')).toBe(true)
+    const h = [hist(100, 4, 5, 'shallow'), hist(100, 4, 5, 'shallow')]
+    const withBase = inferCauses('shallow', [1, 2], usable(6), ctx({ ...base, history: h, baseline: { romDeg: 50, minAngle: 90, maxAngle: 140 } }), [])
+    expect(withBase.some(c => c.confidence !== 'low')).toBe(true)
+  })
+})

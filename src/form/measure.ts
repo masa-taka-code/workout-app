@@ -6,8 +6,8 @@
  */
 import type { FormExerciseKey, Landmark, Pose, RepMetrics, ViewKind, ViewOk } from './types'
 import { LM } from './types'
-import { jointAngle, tiltFromVertical } from './geometry'
-import { CONFIG, MIN_VISIBILITY, SIDE_INDEX } from './rules'
+import { jointAngle, signedTiltFromVertical, tiltFromVertical } from './geometry'
+import { CONFIG, MIN_VISIBILITY, SIDE_INDEX, isLegKey } from './rules'
 import type { Joint, Side } from './rules'
 
 const RAD = 180 / Math.PI
@@ -80,7 +80,7 @@ export interface MeasureFrame {
 
 /** 体節長（2D）。squat は太もも・すね、bench/curl は上腕・前腕 */
 export function segmentLengths(key: FormExerciseKey, pts: Partial<Record<Joint, Landmark>>): { a: number; b: number } | undefined {
-  if (key === 'squat') {
+  if (isLegKey(key)) {
     if (!pts.hip || !pts.knee || !pts.ankle) return undefined
     return { a: dist(pts.hip, pts.knee), b: dist(pts.knee, pts.ankle) }
   }
@@ -91,7 +91,7 @@ export function segmentLengths(key: FormExerciseKey, pts: Partial<Record<Joint, 
 /** world（メートル）での脚（squat：股関節→膝→足首）または腕（肩→肘→手首）の長さ */
 export function worldLength(key: FormExerciseKey, world: Pose, side: Side): number | undefined {
   const idx = SIDE_INDEX[side]
-  const joints: Joint[] = key === 'squat' ? ['hip', 'knee', 'ankle'] : ['shoulder', 'elbow', 'wrist']
+  const joints: Joint[] = isLegKey(key) ? ['hip', 'knee', 'ankle'] : ['shoulder', 'elbow', 'wrist']
   const p = joints.map((j) => world[idx[j]])
   if (p.some((q) => !q)) return undefined
   const d = (a: Landmark, b: Landmark) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z)
@@ -169,7 +169,9 @@ export function phiFromWorld(world: Pose): number | undefined {
   return Math.atan2(Math.abs(sx), Math.abs(sz)) * RAD
 }
 
-export function viewOkFromPhi(phi: number): ViewOk {
+/** key が lateral（正面撮影）のときは、真横ではなく正面（φ=90°）からのずれで判定する */
+export function viewOkFromPhi(phi: number, key?: FormExerciseKey): ViewOk {
+  if (key === 'lateral') phi = 90 - phi
   if (phi <= PHI_OK) return 'ok'
   if (phi <= PHI_CAUTION) return 'caution'
   return 'ng'
@@ -195,7 +197,13 @@ export function shoulderRatio(pose: Pose): number | undefined {
   return dist(ls, rs) / torso
 }
 
-export function viewFromRatio(ratio: number): { view: ViewKind; viewOk: ViewOk } {
+export function viewFromRatio(ratio: number, key?: FormExerciseKey): { view: ViewKind; viewOk: ViewOk } {
+  // lateral は正面が ok、真横が ng（暫定）
+  if (key === 'lateral') {
+    if (ratio >= RATIO_FRONT) return { view: 'front', viewOk: 'ok' }
+    if (ratio < RATIO_SIDE) return { view: 'side', viewOk: 'ng' }
+    return { view: 'oblique', viewOk: 'caution' }
+  }
   // world が無いときは φ を出せないので、向きから良否を決める（暫定）：side ok、oblique caution、front ng
   if (ratio < RATIO_SIDE) return { view: 'side', viewOk: 'ok' }
   if (ratio >= RATIO_FRONT) return { view: 'front', viewOk: 'ng' }
@@ -203,7 +211,7 @@ export function viewFromRatio(ratio: number): { view: ViewKind; viewOk: ViewOk }
 }
 
 /** レップ内のフレームから撮影の向きと良否を決める（world があれば φ、無ければ 2D の比） */
-export function judgeView(frames: MeasureFrame[]): { view: ViewKind; viewOk: ViewOk; phi?: number } {
+export function judgeView(frames: MeasureFrame[], key?: FormExerciseKey): { view: ViewKind; viewOk: ViewOk; phi?: number } {
   const phis: number[] = []
   for (const f of frames) {
     const p = f.world ? phiFromWorld(f.world) : undefined
@@ -211,7 +219,7 @@ export function judgeView(frames: MeasureFrame[]): { view: ViewKind; viewOk: Vie
   }
   if (phis.length > 0) {
     const phi = median(phis) as number
-    return { view: viewKindFromPhi(phi), viewOk: viewOkFromPhi(phi), phi: round(phi, 1) }
+    return { view: viewKindFromPhi(phi), viewOk: viewOkFromPhi(phi, key), phi: round(phi, 1) }
   }
   const ratios: number[] = []
   for (const f of frames) {
@@ -219,7 +227,7 @@ export function judgeView(frames: MeasureFrame[]): { view: ViewKind; viewOk: Vie
     if (r !== undefined) ratios.push(r)
   }
   if (ratios.length === 0) return { view: 'unknown', viewOk: 'caution' }
-  return viewFromRatio(median(ratios) as number)
+  return viewFromRatio(median(ratios) as number, key)
 }
 
 // ---------------------------------------------------------------------------
@@ -396,7 +404,7 @@ export function measureRep(
   const vis = frames.filter((f) => f.visible && f.angle !== undefined && f.pts && f.pose)
   const missing = frames.length > 0 ? 1 - vis.length / frames.length : 1
   const visTerm = vis.length > 0 ? mean(vis.map((f) => visibilityTerm(f.minVis ?? 0))) : 0
-  const { view, viewOk } = judgeView(vis)
+  const { view, viewOk } = judgeView(vis, key)
   const medA = median(set.segA)
   const medB = median(set.segB)
   const stability = segmentStability(vis, medA, medB)
@@ -415,7 +423,8 @@ export function measureRep(
   // --- 速度 ---
   const series: TimedY[] = vis.map((f) => ({
     t: f.t,
-    y: key === 'squat' ? (f.pts?.hip?.y as number) : (f.pts?.wrist?.y as number),
+    // 脚の種目は股関節、腕の種目は手首の上下動。pulldown は手首が下がる動きが上げる動作に当たるので符号を反転する
+    y: isLegKey(key) ? (f.pts?.hip?.y as number) : key === 'pulldown' ? -(f.pts?.wrist?.y as number) : (f.pts?.wrist?.y as number),
     angle: f.angle as number,
   })).filter((s) => Number.isFinite(s.y))
   const t0 = eccFirst ? win.minT : win.startT
@@ -440,12 +449,17 @@ export function measureRep(
   for (const f of vis) if ((f.angle as number) < (bottom.angle as number)) bottom = f
 
   if (key === 'squat') measureSquat(metrics, vis, bottom, lead, refLen)
-  else if (key === 'bench') {
-    measureBench(metrics, result, vis, bottom, win, set, medB)
-  } else measureCurl(metrics, vis, lead)
+  else if (key === 'bench') measureBench(metrics, result, vis, bottom, win, set, medB)
+  else if (key === 'curl') measureCurl(metrics, vis, lead)
+  else if (key === 'rdl') measureRdl(metrics, bottom)
+  else if (key === 'ohp') measureOhp(metrics, vis, bottom, lead)
+  else if (key === 'lateral') measureLateral(metrics, vis, bottom)
+  else if (key === 'pulldown') measurePulldown(metrics, vis, lead)
+  else if (key === 'ohext') measureOhext(metrics, vis, bottom)
+  else measureBss(metrics, vis, bottom)
 
-  // 主関節が伸張側の範囲にいた時間の割合（curl は伸張域がレップの外側なので出さない）
-  if (key !== 'curl') {
+  // 主関節が伸張側の範囲にいた時間の割合（squat・bench のみ。curl は伸張域がレップの外側、新6種目は基準が未確定）
+  if (key === 'squat' || key === 'bench') {
     const limit = key === 'squat' ? STRETCH_SQUAT_MAX : STRETCH_BENCH_MAX
     const span = vis[vis.length - 1].t - vis[0].t
     if (span > 0) {
@@ -576,4 +590,82 @@ function measureCurl(m: RepMetrics, vis: MeasureFrame[], lead: MeasureFrame | un
   for (const f of vis) if (!ext || (f.angle as number) > (ext.angle as number)) ext = f
   const s = ext ? signedUpperArm(ext, facing) : undefined
   if (s !== undefined) m.shoulderAngleAtBottom = round(s, 1)
+}
+
+// ---------------------------------------------------------------------------
+// 追加6種目（しきい値は analysis.ts 側。ここは数値を出すだけ）
+// ---------------------------------------------------------------------------
+
+/** 体幹の後傾（鉛直から後ろへの角度、前傾は 0）。facing は体の向き（+1 は画面の右向き） */
+function leanBack(f: MeasureFrame, facing: number): number | undefined {
+  const s = f.angles?.trunkSigned
+  if (s === undefined) return undefined
+  return Math.max(0, -s * facing)
+}
+
+/** レップ中の体幹の後傾の最大。向きが分からなければ undefined */
+function maxLeanBack(vis: MeasureFrame[], facing: number | undefined): number | undefined {
+  if (facing === undefined) return undefined
+  const v = vis.map((f) => leanBack(f, facing)).filter((x): x is number => x !== undefined)
+  return v.length ? round(Math.max(...v), 1) : undefined
+}
+
+/** rdl：最下点の股関節屈曲と膝の内角 */
+function measureRdl(m: RepMetrics, bottom: MeasureFrame) {
+  m.hipFlexionBottom = round(180 - (bottom.angle as number), 1)
+  const knee = bottom.angles?.knee
+  if (knee !== undefined) m.kneeAngleBottom = round(knee, 1)
+}
+
+/** ohp：体幹の後傾の最大と開始時の後傾（反りの増加を見る）、最下点の肘の屈曲 */
+function measureOhp(m: RepMetrics, vis: MeasureFrame[], bottom: MeasureFrame, lead: MeasureFrame | undefined) {
+  m.elbowFlexionBottom = round(180 - (bottom.angle as number), 1)
+  const facing = facingOf(vis)
+  const max = maxLeanBack(vis, facing)
+  if (max !== undefined) m.trunkLeanBack = max
+  if (facing !== undefined) {
+    const base = leanBack(lead ?? vis[0], facing)
+    if (base !== undefined) m.trunkLeanBackBaseline = round(base, 1)
+  }
+}
+
+/** lateral：肩外転の最大（左右の大きい方）、上げきった時点の左右差、体幹の振れ */
+function measureLateral(m: RepMetrics, vis: MeasureFrame[], bottom: MeasureFrame) {
+  const abd = vis.flatMap((f) => [f.angles?.abdL, f.angles?.abdR]).filter((v): v is number => v !== undefined)
+  if (abd.length) m.abductionTop = round(Math.max(...abd), 1)
+  const l = bottom.angles?.abdL
+  const r = bottom.angles?.abdR
+  if (l !== undefined && r !== undefined) m.abductionAsymmetry = round(Math.abs(l - r), 1)
+  const tr = range(vis.map((f) => f.angles?.trunkSigned).filter((v): v is number => v !== undefined))
+  if (tr !== undefined) m.torsoRange = round(tr, 1)
+}
+
+/** pulldown：体幹の後傾の最大、体幹の振れ、上で伸ばしきったときの肘の内角 */
+function measurePulldown(m: RepMetrics, vis: MeasureFrame[], lead: MeasureFrame | undefined) {
+  const max = maxLeanBack(vis, facingOf(vis))
+  if (max !== undefined) m.trunkLeanBack = max
+  const tr = range(vis.map((f) => f.angles?.trunkSigned).filter((v): v is number => v !== undefined))
+  if (tr !== undefined) m.torsoRange = round(tr, 1)
+  // 開始前に最も伸びていたフレームも候補に入れる（curl の最下点と同じ考え方）
+  let ext = lead?.angle
+  for (const f of vis) if (ext === undefined || (f.angle as number) > ext) ext = f.angle
+  if (ext !== undefined) m.elbowExtensionTop = round(ext, 1)
+}
+
+/** ohext：最下点の肘の屈曲、上腕の振れ（上腕の鉛直からの角度の範囲。符号つきなので真上を通っても正しい） */
+function measureOhext(m: RepMetrics, vis: MeasureFrame[], bottom: MeasureFrame) {
+  m.elbowFlexionBottom = round(180 - (bottom.angle as number), 1)
+  const tilts = vis.flatMap((f) => {
+    const { shoulder, elbow } = f.pts ?? {}
+    return shoulder && elbow ? [signedTiltFromVertical(shoulder, elbow)] : []
+  })
+  const ur = range(tilts)
+  if (ur !== undefined) m.upperArmRange = round(ur, 1)
+}
+
+/** bss：前脚の膝の屈曲と体幹の前傾の最大（前傾は崩れにはせず、注記用） */
+function measureBss(m: RepMetrics, vis: MeasureFrame[], bottom: MeasureFrame) {
+  m.kneeFlexionBottom = round(180 - (bottom.angle as number), 1)
+  const torso = vis.map((f) => f.angles?.torso).filter((v): v is number => v !== undefined)
+  if (torso.length) m.trunkLeanMax = round(Math.max(...torso), 1)
 }

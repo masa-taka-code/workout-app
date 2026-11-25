@@ -105,6 +105,110 @@ export function curlPose(elbow: number, upperArm = 0, torso = 0, opts: PoseOpts 
   return pose
 }
 
+/** 体は画面右向き。鼻を肩の前に置いて向きが分かるようにする */
+function withNose(pose: Pose, shoulder: Pt): Pose {
+  pose[LM.nose] = { x: shoulder.x + 0.05, y: shoulder.y - 0.1, z: 0, visibility: 1 }
+  return pose
+}
+
+/**
+ * ルーマニアンデッドリフト（真横、右向き）。hip = 肩-股関節-膝の内角、knee = 膝の内角（既定 165°）。
+ * すねは鉛直。hip が小さいほど上体が前（+x）に倒れる。
+ */
+export function rdlPose(hip: number, knee = 165, opts: PoseOpts = {}): Pose {
+  const ankle = { x: 0.5, y: 0.9 }
+  const k = { x: ankle.x, y: ankle.y - SEG }
+  const c = Math.cos(knee * RAD)
+  const s = Math.sin(knee * RAD)
+  const h = { x: k.x - SEG * s, y: k.y + SEG * c }
+  // 股関節→膝の向きを、−hip 度回した向きが股関節→肩（前に倒れる側）
+  const ux = (k.x - h.x) / SEG
+  const uy = (k.y - h.y) / SEG
+  const hc = Math.cos(-hip * RAD)
+  const hs = Math.sin(-hip * RAD)
+  const shoulder = { x: h.x + TORSO_LEN * (ux * hc - uy * hs), y: h.y + TORSO_LEN * (ux * hs + uy * hc) }
+  return withNose(place({ ankle, knee: k, hip: h, shoulder }, opts), shoulder)
+}
+
+/**
+ * ショルダープレス・ラットプルダウン（真横、右向き）。elbow = 肘の内角、back = 体幹の後傾（鉛直から後ろへの角度、
+ * 負なら前傾）。前腕は鉛直（手首が肘の真上）、肘は肩より前に出る。
+ */
+export function ohpPose(elbow: number, back = 0, opts: PoseOpts = {}): Pose {
+  const shoulder = { x: 0.5, y: 0.45 }
+  const e = { x: shoulder.x + SEG * Math.sin(elbow * RAD), y: shoulder.y + SEG * Math.cos(elbow * RAD) }
+  const wrist = { x: e.x, y: e.y - SEG }
+  // 後ろに反るほど、肩が腰より後ろ（−x）に行く
+  const hip = { x: shoulder.x + TORSO_LEN * Math.sin(back * RAD), y: shoulder.y + TORSO_LEN * Math.cos(back * RAD) }
+  return withNose(place({ shoulder, elbow: e, wrist, hip }, opts), shoulder)
+}
+
+/**
+ * オーバーヘッドエクステンション（真横、右向き）。elbow = 肘の内角、tilt = 上腕の前への傾き（鉛直から。度）。
+ * 上腕は肩から上へ、前腕は頭の後ろ（−x）へ折れる。
+ */
+export function ohextPose(elbow: number, tilt = 0, opts: PoseOpts = {}): Pose {
+  const shoulder = { x: 0.5, y: 0.45 }
+  const e = { x: shoulder.x + SEG * Math.sin(tilt * RAD), y: shoulder.y - SEG * Math.cos(tilt * RAD) }
+  // 肘→肩の向きを elbow 度回した向きが前腕
+  const dx = (shoulder.x - e.x) / SEG
+  const dy = (shoulder.y - e.y) / SEG
+  const ec = Math.cos(elbow * RAD)
+  const es = Math.sin(elbow * RAD)
+  const wrist = { x: e.x + SEG * (dx * ec - dy * es), y: e.y + SEG * (dx * es + dy * ec) }
+  return withNose(place({ shoulder, elbow: e, wrist }, opts), shoulder)
+}
+
+/**
+ * サイドレイズ（正面）。左右の腕の外転角（体幹の線と上腕のなす角。腕を下ろして 0、真横で 90）を別々に指定できる。
+ * trunkTilt = 体幹の傾き（度。肩が腰より +x 側なら正）。腕はまっすぐ（肘・手首が一直線）。
+ */
+export function lateralPose(abdLeft: number, abdRight = abdLeft, trunkTilt = 0, opts: PoseOpts = {}): Pose {
+  const pose = blank()
+  const t = trunkTilt * RAD
+  const sy = 0.3
+  const hipY = sy + TORSO_LEN * Math.cos(t)
+  const sides = [
+    { lm: LEFT, hipX: 0.4, sign: 1, abd: abdLeft, vis: opts.visLeft ?? 1 },
+    { lm: RIGHT, hipX: 0.6, sign: -1, abd: abdRight, vis: opts.visRight ?? 1 },
+  ]
+  for (const sd of sides) {
+    const hip = { x: sd.hipX, y: hipY }
+    const shoulder = { x: hip.x + TORSO_LEN * Math.sin(t), y: hip.y - TORSO_LEN * Math.cos(t) }
+    // 肩→股関節の向きを、外側（左は −x、右は +x）に abd 度回した向きが腕
+    const dx = (hip.x - shoulder.x) / TORSO_LEN
+    const dy = (hip.y - shoulder.y) / TORSO_LEN
+    const a = sd.abd * RAD
+    const ux = dx * Math.cos(a) - sd.sign * dy * Math.sin(a)
+    const uy = sd.sign * dx * Math.sin(a) + dy * Math.cos(a)
+    const elbow = { x: shoulder.x + SEG * ux, y: shoulder.y + SEG * uy }
+    const wrist = { x: shoulder.x + 2 * SEG * ux, y: shoulder.y + 2 * SEG * uy }
+    const put = (i: number, p: Pt) => {
+      pose[i] = { x: p.x, y: p.y, z: 0, visibility: sd.vis }
+    }
+    put(sd.lm.shoulder, shoulder)
+    put(sd.lm.elbow, elbow)
+    put(sd.lm.wrist, wrist)
+    put(sd.lm.hip, hip)
+  }
+  return pose
+}
+
+/**
+ * ブルガリアンスクワット（真横、右向き）。前脚は squatPose と同じ形（knee = 前脚の膝の内角、torso = 体幹の前傾）。
+ * 後ろ脚は台に乗せて後ろに伸ばす（足首が前脚よりずっと後ろ）。frontSide = 前脚の側。
+ */
+export function bssPose(knee: number, torso = 0, frontSide: 'left' | 'right' = 'left', opts: PoseOpts = {}): Pose {
+  const pose = squatPose(knee, torso, opts)
+  const back = frontSide === 'left' ? RIGHT : LEFT
+  const hip = pose[back.hip]
+  const vis = (frontSide === 'left' ? opts.visRight : opts.visLeft) ?? 1
+  // 後ろ脚：膝は股関節の後ろ下、足首はさらに後ろの台の上（膝の内角は約 130°）
+  pose[back.knee] = { x: hip.x - 0.12, y: hip.y + 0.15, z: 0, visibility: vis }
+  pose[back.ankle] = { x: hip.x - 0.35, y: hip.y + 0.1, z: 0, visibility: vis }
+  return withNose(pose, pose[LEFT.shoulder])
+}
+
 /** 左側の点は left から、右側の点は right から取る */
 export function combineSides(left: Pose, right: Pose): Pose {
   const out = right.map((p) => ({ ...p }))

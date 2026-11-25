@@ -26,6 +26,14 @@ export function tiltFromVertical(from: Pt, to: Pt): number {
   return Math.atan2(Math.abs(dx), -dy) * RAD
 }
 
+/** from から to へ向かう線の、鉛直上向きからの符号つきの角度（度）。to が from より +x 側なら正 */
+export function signedTiltFromVertical(from: Pt, to: Pt): number {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  if (dx === 0 && dy === 0) return 0
+  return Math.atan2(dx, -dy) * RAD
+}
+
 /**
  * MediaPipe の正規化座標は x を画像の幅、y を画像の高さで割った値なので、
  * そのまま角度を計算すると縦横比のぶんだけゆがむ（縦長 3:4 で膝 115° が 101° に見える等）。

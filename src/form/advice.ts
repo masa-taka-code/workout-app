@@ -95,6 +95,33 @@ const ADVICE: Record<string, FaultAdvice> = {
     cue: '最初と同じ深さまで動かす',
     drills: ['可動域を保てる回数で止める', '重量を下げる'],
   },
+  'lean-back': {
+    label: '腰が反りすぎている',
+    cue: 'お腹に力を入れ、肋骨を下げる',
+    drills: ['重量を下げる', '座位で背もたれを使って行う'],
+    muscleHint: '重量が重すぎる・疲れてきたときに出やすい動きです（暫定、根拠の強さ：意見）',
+    evidence: '体幹の後傾がレップ開始時より 15° 以上増えたら知らせます。しきい値は暫定で、研究で確かめられた値ではありません',
+  },
+  'elbow-drift': {
+    label: '上腕がぶれる',
+    cue: '肘を天井に向けたまま',
+    drills: ['軽い重量で肘の位置を固定して行う'],
+    evidence: '上腕の振れ 25° 超を知らせます（暫定のしきい値。研究で確かめられた値ではありません）',
+  },
+  'knee-bend': {
+    label: '膝が曲がりすぎて見える（スクワットに近い）',
+    cue: 'すねを床と垂直に保つ',
+    drills: ['壁にお尻を近づけるヒップヒンジの練習', '軽いダンベルで股関節から折りたたむ練習'],
+    muscleHint: '膝を曲げるほど、もも裏より太もも前の関与が増えやすいと考えられます（根拠の強さ：弱）',
+    evidence: '最下点の膝の内角 130° 未満を知らせます（暫定のしきい値。姿勢推定の角度誤差は約12°：Leuthold 2025）',
+  },
+  'shallow-hinge': {
+    label: '股関節の曲がりが浅い',
+    cue: 'お尻を後ろの壁へ',
+    drills: ['軽い重量で基準動画と同じ深さにそろえる', '壁にお尻を近づけるヒップヒンジの練習'],
+    muscleHint: 'もも裏の硬さが関係することがあります（根拠の強さ：弱）',
+    evidence: '股関節を深く曲げてハムストリングを伸ばす方向が有利（Maeo 2021、座位レッグカールの研究からの類推）。基準動画の90%未満で知らせます（暫定）',
+  },
   'short-rom': {
     label: 'いつもより可動域が狭い',
     cue: '基準動画と同じ深さまで動かす',
@@ -118,6 +145,45 @@ const ADVICE_BY_KEY: Record<string, FaultAdvice> = {
     drills: ['重量を下げて全可動域で行う', '基準動画と同じ深さで撮り比べる'],
     evidence: '深さをそろえると記録を比べやすい。可動域の違いによる長期の効果は研究で一貫しない',
   },
+  'ohp:shallow': {
+    label: 'バーの下ろし方が浅い',
+    cue: 'バーを顎の高さまで下ろす',
+    drills: ['重量を下げて、毎回同じ高さまで下ろす', '基準動画と同じ深さで撮り比べる'],
+    evidence: '下ろす深さと筋肥大の関係は研究で確かめられていません。基準動画の90%未満、基準がなければ肘の屈曲 70° 未満で知らせます（暫定）',
+  },
+  'lateral:swing': {
+    label: '体の反動を使っている',
+    cue: '上体を止めたまま腕だけ',
+    drills: ['重量を下げる', '座位や、ベンチに胸をつけて行う', 'テンポを決めて行う'],
+    muscleHint: '重すぎる・疲れてきたときに出やすい動きです（根拠の強さ：弱）',
+    evidence: '反動の有無で筋肥大に差がなかった研究はカールなどのもの（Augustin 2025）。体幹の振れ 15° 超を知らせます（暫定）',
+  },
+  'pulldown:swing': {
+    label: '体の反動を使っている',
+    cue: '胸を張ったまま、肘を下へ',
+    drills: ['重量を下げる', 'テンポを決めて行う'],
+    muscleHint: '重すぎる・疲れてきたときに出やすい動きです（根拠の強さ：弱）',
+    evidence: '体幹の振れ 20° 超を知らせます（暫定）。約30°の後傾は広背筋の活動を変えないため、後傾そのものは崩れにしていません（Buonsenso 2025）',
+  },
+  'pulldown:partial-top': {
+    label: '上で腕を伸ばしきれていない',
+    cue: 'バーに引き上げられるまで腕を伸ばす',
+    drills: ['重量を下げて、上で肩まで伸ばす', '基準動画と同じ高さまで戻す'],
+    evidence: '肘の内角が 150° 未満（基準動画があれば基準の最大角 −15° 未満）を知らせます（暫定）。上での伸ばしきりと肥大の関係は研究で確かめられていません',
+  },
+  'ohext:shallow': {
+    label: '肘の曲げ方が浅い',
+    cue: '手を首の後ろまで下ろす',
+    drills: ['重量を下げて、肘 90° まで曲げる', '基準動画と同じ深さで撮り比べる'],
+    evidence: '研究の可動域は肘 90° まで曲げる範囲（Maeo 2023、頭上で長頭の筋量が大きく増えた）。基準動画があれば90%未満で知らせます',
+  },
+  'bss:shallow': {
+    label: 'しゃがみが浅い',
+    cue: '後ろ膝を床に近づける',
+    drills: ['重量を下げて深さをそろえる', '基準動画と同じ深さで撮り比べる'],
+    muscleHint: '足首と股関節の曲がりやすさが深さと関係します（根拠の強さ：中、squat からの類推）',
+    evidence: '研究での深さの指示は前の太ももが床と平行（Song 2023）。基準なしでは前脚の膝屈曲 78°（90° − 姿勢推定の誤差 12°：Leuthold 2025）未満で知らせます（暫定）',
+  },
 }
 
 /** 未知の code でも落ちないよう、最低限の定義を返す */
@@ -126,7 +192,7 @@ export function adviceFor(key: FormExerciseKey, code: string): FaultAdvice {
 }
 
 /** 安全に関わる崩れ（primaryCue で最優先する） */
-export const SAFETY_CODES: readonly string[] = ['hip-rise', 'knee-valgus']
+export const SAFETY_CODES: readonly string[] = ['hip-rise', 'knee-valgus', 'lean-back']
 
 /** 崩れごとに、原因として挙げてよい種類（研究の表にない原因は出さない）。表にない code は全種類を許す */
 export const ALLOWED_CAUSES: Record<string, CauseKind[]> = {
@@ -143,4 +209,8 @@ export const ALLOWED_CAUSES: Record<string, CauseKind[]> = {
   'fast-down': ['technique', 'load'],
   'rom-drop': ['fatigue', 'load'],
   'short-rom': ['technique', 'fatigue', 'load'],
+  'lean-back': ['load', 'fatigue', 'technique'],
+  'elbow-drift': ['load', 'fatigue', 'technique'],
+  'knee-bend': ['technique'],
+  'shallow-hinge': ['mobility', 'technique', 'fatigue', 'load'],
 }

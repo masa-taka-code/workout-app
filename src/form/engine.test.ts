@@ -370,18 +370,34 @@ describe('formKeyFor / setupGuide', () => {
   const ex = (name: string) => ({ name }) as Exercise
   it('種目名から種目キーを決める', () => {
     expect(formKeyFor(ex('バーベルスクワット'))).toBe('squat')
-    expect(formKeyFor(ex('ブルガリアンスクワット'))).toBeUndefined()
+    expect(formKeyFor(ex('ブルガリアンスクワット'))).toBe('bss')
     expect(formKeyFor(ex('スプリットスクワット'))).toBeUndefined()
     expect(formKeyFor(ex('ベンチプレス'))).toBe('bench')
     expect(formKeyFor(ex('ダンベルベンチプレス'))).toBeUndefined()
     expect(formKeyFor(ex('インクラインベンチプレス'))).toBeUndefined()
     expect(formKeyFor(ex('バーベルカール'))).toBe('curl')
     expect(formKeyFor(ex('レッグカール'))).toBeUndefined()
-    expect(formKeyFor(ex('ラットプルダウン'))).toBeUndefined()
+    expect(formKeyFor(ex('ラットプルダウン'))).toBe('pulldown')
+  })
+  it('追加6種目の名前判定', () => {
+    expect(formKeyFor(ex('ルーマニアンデッドリフト'))).toBe('rdl')
+    expect(formKeyFor(ex('スティッフレッグドデッドリフト'))).toBe('rdl')
+    expect(formKeyFor(ex('デッドリフト'))).toBeUndefined()
+    expect(formKeyFor(ex('ショルダープレス'))).toBe('ohp')
+    expect(formKeyFor(ex('ダンベルショルダープレス'))).toBe('ohp')
+    expect(formKeyFor(ex('サイドレイズ'))).toBe('lateral')
+    expect(formKeyFor(ex('ラテラルレイズ'))).toBe('lateral')
+    expect(formKeyFor(ex('カーフレイズ'))).toBeUndefined()
+    expect(formKeyFor(ex('オーバーヘッドエクステンション'))).toBe('ohext')
+    expect(formKeyFor(ex('ブルガリアンスクワット'))).toBe('bss')
   })
   it('撮影のしかたが全種目にある', () => {
-    for (const k of ['squat', 'bench', 'curl'] as FormExerciseKey[]) expect(setupGuide(k).length).toBeGreaterThan(10)
+    const all: FormExerciseKey[] = ['squat', 'bench', 'curl', 'rdl', 'ohp', 'lateral', 'pulldown', 'ohext', 'bss']
+    for (const k of all) expect(setupGuide(k).length).toBeGreaterThan(10)
     expect(setupGuide('squat')).toContain('真横')
+    // サイドレイズだけ正面、ほかの新種目は真横
+    expect(setupGuide('lateral')).toContain('正面')
+    for (const k of ['rdl', 'ohp', 'pulldown', 'ohext', 'bss'] as FormExerciseKey[]) expect(setupGuide(k)).toContain('真横')
   })
 })
 

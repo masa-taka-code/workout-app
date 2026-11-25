@@ -29,10 +29,10 @@ export function judgePlacement(key: FormExerciseKey, pose: Pose | undefined, wor
     joints.every(j => (pose[SIDE_INDEX[side][j]]?.visibility ?? 0) >= MIN_VISIBILITY)
   if (!sideVisible('left') && !sideVisible('right')) return 'hidden'
   const phi = world ? phiFromWorld(world) : undefined
-  if (phi !== undefined) return viewOkFromPhi(phi)
+  if (phi !== undefined) return viewOkFromPhi(phi, key)
   const ratio = shoulderRatio(pose)
   if (ratio === undefined) return 'caution'
-  return viewFromRatio(ratio).viewOk
+  return viewFromRatio(ratio, key).viewOk
 }
 
 export interface AutoStartState {

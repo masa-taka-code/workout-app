@@ -1,7 +1,7 @@
 /** 種目ごとの主関節・しきい値・減点ルール */
-import type { FormExerciseKey, Issue, Landmark } from './types'
+import type { FormExerciseKey, Issue, Landmark, Pose } from './types'
 import { LM } from './types'
-import { jointAngle, tiltFromVertical } from './geometry'
+import { jointAngle, signedTiltFromVertical, tiltFromVertical } from './geometry'
 
 export type Side = 'left' | 'right'
 export type Joint = 'shoulder' | 'elbow' | 'wrist' | 'hip' | 'knee' | 'ankle'
@@ -19,7 +19,7 @@ export const SIDE_INDEX: Record<Side, Record<Joint, number>> = {
 
 export interface FormConfig {
   /** 主関節の角度の名前 */
-  main: 'knee' | 'elbow'
+  main: 'knee' | 'elbow' | 'hip' | 'shoulder'
   /** 伸びた状態とみなす角度（これを超えたら top） */
   top: number
   /** 必要な関節 */
@@ -32,12 +32,41 @@ export const CONFIG: Record<FormExerciseKey, FormConfig> = {
   squat: { main: 'knee', top: 160, joints: ['shoulder', 'hip', 'knee', 'ankle'], eccentricFirst: true },
   bench: { main: 'elbow', top: 155, joints: ['shoulder', 'elbow', 'wrist'], eccentricFirst: true },
   curl: { main: 'elbow', top: 130, joints: ['shoulder', 'elbow', 'wrist', 'hip'], eccentricFirst: false },
+  // 追加6種目の top はすべて暫定
+  // rdl：主関節は股関節（肩-股関節-膝の内角）
+  rdl: { main: 'hip', top: 160, joints: ['shoulder', 'hip', 'knee', 'ankle'], eccentricFirst: true },
+  ohp: { main: 'elbow', top: 150, joints: ['shoulder', 'elbow', 'wrist', 'hip'], eccentricFirst: true },
+  // lateral：主関節は肩の外転を 180 から引いたもの（180 − 外転角。腕を下ろした状態が約 180°）。上げる動作が前半
+  lateral: { main: 'shoulder', top: 150, joints: ['shoulder', 'elbow', 'wrist', 'hip'], eccentricFirst: false },
+  // pulldown：バーを引き下ろす（肘が曲がる）動作が前半
+  // top は 130（150 だと「上で伸ばしきらない（<150）」レップが数えられず、partial-top が出ない。curl と同じ理由）
+  pulldown: { main: 'elbow', top: 130, joints: ['shoulder', 'elbow', 'wrist', 'hip'], eccentricFirst: false },
+  ohext: { main: 'elbow', top: 150, joints: ['shoulder', 'elbow', 'wrist'], eccentricFirst: true },
+  // bss：主関節は前脚の膝（前脚の選び方は RepTracker.pickSide）
+  bss: { main: 'knee', top: 160, joints: ['shoulder', 'hip', 'knee', 'ankle'], eccentricFirst: true },
+}
+
+/** 脚（太もも・すね）で体節長・速度を見る種目 */
+export function isLegKey(key: FormExerciseKey): boolean {
+  return key === 'squat' || key === 'rdl' || key === 'bss'
+}
+
+/** 肩の外転角（度）：肩→股関節の線と肩→肘の線のなす角。腕を下ろしていれば 0、真横に上げれば 90。見えていなければ undefined */
+export function abductionOf(pose: Pose, side: Side): number | undefined {
+  const idx = SIDE_INDEX[side]
+  const s = pose[idx.shoulder]
+  const e = pose[idx.elbow]
+  const h = pose[idx.hip]
+  if (!s || !e || !h) return undefined
+  if ([s, e, h].some(q => (q.visibility ?? 0) < MIN_VISIBILITY)) return undefined
+  return jointAngle(h, s, e)
 }
 
 /** 1点が見えているとみなす visibility の下限 */
 export const MIN_VISIBILITY = 0.5
 
-export function computeAngles(key: FormExerciseKey, p: Record<Joint, Landmark>): Record<string, number> {
+/** pose（縦横比補正済みの全点）は lateral が左右の腕を比べるときだけ使う */
+export function computeAngles(key: FormExerciseKey, p: Record<Joint, Landmark>, pose?: Pose): Record<string, number> {
   if (key === 'squat') {
     return {
       knee: jointAngle(p.hip, p.knee, p.ankle),
@@ -47,6 +76,43 @@ export function computeAngles(key: FormExerciseKey, p: Record<Joint, Landmark>):
   }
   if (key === 'bench') {
     return { elbow: jointAngle(p.shoulder, p.elbow, p.wrist) }
+  }
+  if (key === 'rdl') {
+    return {
+      hip: jointAngle(p.shoulder, p.hip, p.knee),
+      knee: jointAngle(p.hip, p.knee, p.ankle),
+      torso: tiltFromVertical(p.hip, p.shoulder),
+    }
+  }
+  if (key === 'bss') {
+    return {
+      knee: jointAngle(p.hip, p.knee, p.ankle),
+      torso: tiltFromVertical(p.hip, p.shoulder),
+    }
+  }
+  if (key === 'ohp' || key === 'pulldown') {
+    return {
+      elbow: jointAngle(p.shoulder, p.elbow, p.wrist),
+      torso: tiltFromVertical(p.hip, p.shoulder),
+      trunkSigned: signedTiltFromVertical(p.hip, p.shoulder),
+    }
+  }
+  if (key === 'ohext') {
+    return { elbow: jointAngle(p.shoulder, p.elbow, p.wrist) }
+  }
+  if (key === 'lateral') {
+    // 左右の腕の外転のうち大きい方で数える。片側しか見えなければその側だけ
+    const out: Record<string, number> = {
+      torso: tiltFromVertical(p.hip, p.shoulder),
+      trunkSigned: signedTiltFromVertical(p.hip, p.shoulder),
+    }
+    const l = pose ? abductionOf(pose, 'left') : undefined
+    const r = pose ? abductionOf(pose, 'right') : undefined
+    if (l !== undefined) out.abdL = l
+    if (r !== undefined) out.abdR = r
+    const best = Math.max(l ?? -Infinity, r ?? -Infinity)
+    out.shoulder = 180 - (Number.isFinite(best) ? best : jointAngle(p.hip, p.shoulder, p.elbow))
+    return out
   }
   return {
     elbow: jointAngle(p.shoulder, p.elbow, p.wrist),
@@ -88,7 +154,7 @@ export function formIssues(key: FormExerciseKey, s: RepStats): Issue[] {
     if (s.minAngle > 100) {
       out.push(makeIssue('shallow', 'バーを胸まで下ろせていない', '胸に軽く触れるまで下ろしましょう', 25))
     }
-  } else {
+  } else if (key === 'curl') {
     if (s.maxAngle < 150) {
       out.push(makeIssue('partial-bottom', '腕を伸ばしきれていない', '下で肘を伸ばしきると、伸びた位置で負荷がかかり効果的です', 25))
     }

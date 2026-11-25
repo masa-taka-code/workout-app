@@ -27,6 +27,17 @@ const CUE_VOICE: Record<string, string> = {
   'elbow-forward': '肘は脇腹に',
   'fast-down': 'ゆっくり下ろす',
   'partial-bottom': '下で伸ばしきる',
+  // 追加6種目（shallow・swing は種目ごとに文言が違うので `種目:code` で指定）
+  'knee-bend': 'すねは床と垂直に',
+  'shallow-hinge': 'お尻を後ろの壁へ',
+  'lean-back': 'お腹に力、肋骨を下げる',
+  'ohp:shallow': '顎の高さまで下ろす',
+  'lateral:swing': '上体を止めて腕だけ',
+  'pulldown:swing': '胸を張って肘を下へ',
+  'pulldown:partial-top': '上で腕を伸ばしきる',
+  'ohext:shallow': '首の後ろまで下ろす',
+  'elbow-drift': '肘は天井に向けたまま',
+  'bss:shallow': '後ろ膝を床へ',
 }
 
 /** 声に出す短い文。決まっていない崩れは undefined（声かけしない） */

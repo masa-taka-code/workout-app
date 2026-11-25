@@ -50,12 +50,14 @@ const RANK: Record<Confidence, number> = { high: 3, mid: 2, low: 1 }
  * 確信度の上限（根拠が弱い原因は、手がかりが重なっても上限を超えない）。
  *  - 疲労：姿勢推定の速度は未検証
  *  - 膝の内倒れ：2D の投影角は 3D の外反とほとんど一致しない（R² 0〜64%）
- *  - 基準動画が無いときの squat の浅さ：しきい値に姿勢推定の誤差（約12°）があり、深い屈曲は小さめに出やすい（Leuthold 2025）
+ *  - 膝の曲げすぎ（rdl）：2D の膝の角度は誤差が約12° あり、技術の問題と言い切れない
+ *  - 基準動画が無いときの squat・bss の浅さ：しきい値に姿勢推定の誤差（約12°）があり、深い屈曲は小さめに出やすい（Leuthold 2025）
  */
 function confidenceCap(cause: CauseKind, code: string, ctx: FormContext): Confidence {
   if (cause === 'fatigue') return 'mid'
   if (code === 'knee-valgus') return 'mid'
-  if (code === 'shallow' && ctx.key === 'squat' && !(ctx.baseline && ctx.baseline.romDeg > 0)) return 'low'
+  if (code === 'knee-bend') return 'mid'
+  if (code === 'shallow' && (ctx.key === 'squat' || ctx.key === 'bss') && !(ctx.baseline && ctx.baseline.romDeg > 0)) return 'low'
   return 'high'
 }
 

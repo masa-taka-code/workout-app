@@ -500,3 +500,280 @@ describe('toSessionSummary', () => {
     expect(s.confidence).toBe(report.confidence)
   })
 })
+
+// ---------------------------------------------------------------------------
+// 追加6種目（rdl・ohp・lateral・pulldown・ohext・bss）
+// ---------------------------------------------------------------------------
+
+const BASE = { romDeg: 60, minAngle: 100, maxAngle: 160 }
+const codesOf = (r: ReturnType<typeof analyzeSet>) => r.faults.map(f => f.code)
+const reps5 = (m: Partial<RepMetrics>, o: Partial<RepResult> = {}) => Array.from({ length: 5 }, (_, i) => rep(i + 1, o, m))
+
+describe('追加6種目：狙いの選択肢', () => {
+  it('種目ごとの狙い（ohp・lateral・pulldown は狙いなし）', () => {
+    expect(emphasisTargets('rdl').map(t => t.id)).toEqual(['hams', 'glutes'])
+    expect(emphasisTargets('ohp')).toEqual([])
+    expect(emphasisTargets('lateral')).toEqual([])
+    expect(emphasisTargets('pulldown')).toEqual([])
+    expect(emphasisTargets('ohext').map(t => t.id)).toEqual(['long'])
+    expect(emphasisTargets('bss').map(t => t.id)).toEqual(['quads', 'glutes'])
+  })
+})
+
+describe('追加6種目：ストレッチ', () => {
+  it('ohext：基準なしは肘屈曲 90° で 100 点、45° は D=0.5 で 31 点。研究の可動域を reference にする', () => {
+    const full = analyzeSet(reps5({ elbowFlexionBottom: 90 }), ctx('ohext')).stretch!
+    expect(full.score).toBe(100)
+    expect(full.reference).toBe('研究の可動域（肘を 90° まで曲げる：Maeo 2023）')
+    const half = analyzeSet(reps5({ elbowFlexionBottom: 45 }), ctx('ohext')).stretch!
+    expect(half.reach).toBeCloseTo(0.5)
+    expect(half.score).toBe(31)
+  })
+
+  it('ohext：基準動画があれば基準を優先する', () => {
+    const s = analyzeSet(reps5({ elbowFlexionBottom: 90 }, { romDeg: 30 }), ctx('ohext', { baseline: BASE })).stretch!
+    expect(s.reach).toBeCloseTo(0.5)
+    expect(s.reference).toBe('あなたの基準動画')
+  })
+
+  it.each(['rdl', 'ohp', 'lateral', 'pulldown', 'bss'] as const)('%s：基準なしは stretch が undefined', key => {
+    const m = { elbowFlexionBottom: 90, kneeFlexionBottom: 100, hipFlexionBottom: 80 }
+    expect(analyzeSet(reps5(m), ctx(key)).stretch).toBeUndefined()
+  })
+
+  it.each(['rdl', 'ohp', 'lateral', 'pulldown', 'bss'] as const)('%s：基準ありは romDeg / 基準で判定する', key => {
+    expect(analyzeSet(reps5({}, { romDeg: 60 }), ctx(key, { baseline: BASE })).stretch?.score).toBe(100)
+    const half = analyzeSet(reps5({}, { romDeg: 30 }), ctx(key, { baseline: BASE })).stretch!
+    expect(half.reach).toBeCloseTo(0.5)
+    expect(half.score).toBe(31)
+    expect(half.reference.startsWith('あなたの基準動画')).toBe(true)
+  })
+
+  it('rdl：基準ありの reference に Maeo 2021 の類推の補足が付く', () => {
+    const s = analyzeSet(reps5({}, { romDeg: 60 }), ctx('rdl', { baseline: BASE })).stretch!
+    expect(s.reference).toContain('Maeo 2021')
+    expect(s.reference).toContain('類推')
+  })
+})
+
+describe('追加6種目：効いている部位・狙い・コツ', () => {
+  it('rdl：主働筋の向きだけ（割合なし）、背中の丸まりは測れない旨を note に書く', () => {
+    const r = analyzeSet(reps5({}), ctx('rdl'))
+    expect(r.emphasis.distribution.length).toBeGreaterThan(0)
+    expect(r.emphasis.distribution.every(d => d.share === undefined)).toBe(true)
+    expect(r.emphasis.note).toContain('背中の丸まりはこのアプリでは測れません')
+  })
+
+  it('rdl：もも裏とお尻で別のコツ（筋電の研究・筋肥大は未検証）', () => {
+    const hams = analyzeSet(reps5({}), ctx('rdl', { targetId: 'hams' })).emphasis.target!
+    expect(hams.tips[0]).toContain('膝を軽く曲げたまま')
+    expect(hams.tips[0]).toContain('Coratella 2022')
+    expect(hams.tips[0]).toContain('筋肥大は未検証')
+    const glutes = analyzeSet(reps5({}), ctx('rdl', { targetId: 'glutes' })).emphasis.target!
+    expect(glutes.tips[0]).toContain('膝を伸ばし気味')
+  })
+
+  it('ohp：狙いなし。首の後ろへ下ろす方法はおすすめしない旨を note に', () => {
+    const r = analyzeSet(reps5({}), ctx('ohp'))
+    expect(r.emphasis.target).toBeUndefined()
+    expect(r.emphasis.note).toContain('おすすめしません')
+  })
+
+  it('lateral：note にダンベルとケーブルの差なし（Larsen 2025）。左右差が 15° 以下なら参考表示は出ない', () => {
+    const r = analyzeSet(reps5({ abductionAsymmetry: 10 }), ctx('lateral'))
+    expect(r.emphasis.note).toContain('Larsen 2025')
+    expect(r.emphasis.note).not.toContain('左右で上がる高さが違って見えます')
+  })
+
+  it('lateral：左右差が 15° を超えると note に参考表示。崩れには入れない', () => {
+    const r = analyzeSet(reps5({ abductionAsymmetry: 20 }), ctx('lateral'))
+    expect(r.emphasis.note).toContain('左右で上がる高さが違って見えます（参考）')
+    expect(codesOf(r)).not.toContain('asymmetry')
+    expect(r.faults).toEqual([])
+  })
+
+  it('pulldown：note に順手・後傾の研究（Buonsenso 2025）、狙いなし', () => {
+    const r = analyzeSet(reps5({}), ctx('pulldown'))
+    expect(r.emphasis.note).toContain('Buonsenso 2025')
+    expect(r.emphasis.target).toBeUndefined()
+  })
+
+  it('ohext：狙いは長頭。コツに +28.5% 対 +19.6%（Maeo 2023）と軽くなってよい旨', () => {
+    const t = analyzeSet(reps5({}), ctx('ohext', { targetId: 'long' })).emphasis.target!
+    expect(t.label).toBe('腕の裏の長頭')
+    expect(t.tips.join('')).toContain('+28.5% 対 +19.6%')
+    expect(t.tips.join('')).toContain('軽くなる')
+  })
+
+  it('bss：太もも前とお尻で別のコツ。curl の long・squat の quads のコツは混ざらない', () => {
+    const q = analyzeSet(reps5({}), ctx('bss', { targetId: 'quads' })).emphasis.target!
+    expect(q.tips[0]).toContain('上体を立て')
+    expect(q.tips.join('')).not.toContain('Straub')
+    const g = analyzeSet(reps5({}), ctx('bss', { targetId: 'glutes' })).emphasis.target!
+    expect(g.tips[0]).toContain('Aygun-Polat 2025')
+    const curlLong = analyzeSet(reps5({}), ctx('curl', { targetId: 'long' })).emphasis.target!
+    expect(curlLong.tips[0]).toContain('インクライン')
+  })
+
+  it('効き具合スコア：share が無い種目は S=1、速度の目安は出さないので L（ストレッチ）だけ', () => {
+    const r = analyzeSet(
+      reps5({ elbowFlexionBottom: 90, velocityLossPct: 40 }), ctx('ohext', { targetId: 'long' }),
+    )
+    expect(r.effort.source).toBe('none')
+    expect(r.effort.proximity).toBeUndefined()
+    expect(r.emphasis.target?.score).toBe(100)
+  })
+
+  it('効き具合スコア：L が無ければ undefined（rdl の基準なし）', () => {
+    const r = analyzeSet(reps5({}), ctx('rdl', { targetId: 'hams' }))
+    expect(r.emphasis.target?.score).toBeUndefined()
+  })
+})
+
+describe('追加6種目：崩れの検出', () => {
+  it('rdl knee-bend：膝の内角 130° 未満（130° ちょうどは出ない）。背中の丸まりは検出しない', () => {
+    expect(codesOf(analyzeSet(reps5({ kneeAngleBottom: 125 }), ctx('rdl')))).toEqual(['knee-bend'])
+    expect(analyzeSet(reps5({ kneeAngleBottom: 130 }), ctx('rdl')).faults).toEqual([])
+  })
+
+  it('rdl shallow-hinge：基準ありの D < 0.9 だけ。基準なしでは出さない', () => {
+    expect(codesOf(analyzeSet(reps5({}, { romDeg: 50 }), ctx('rdl', { baseline: BASE })))).toEqual(['shallow-hinge'])
+    expect(analyzeSet(reps5({}, { romDeg: 55 }), ctx('rdl', { baseline: BASE })).faults).toEqual([]) // D=0.917
+    expect(analyzeSet(reps5({}, { romDeg: 10 }), ctx('rdl')).faults).toEqual([])
+  })
+
+  it('ohp lean-back：開始時より 15° 超の増加で出る（ちょうど 15° は出ない）。安全に関わる崩れ', () => {
+    expect(codesOf(analyzeSet(reps5({ trunkLeanBack: 20, trunkLeanBackBaseline: 4 }), ctx('ohp')))).toEqual(['lean-back'])
+    expect(analyzeSet(reps5({ trunkLeanBack: 20, trunkLeanBackBaseline: 5 }), ctx('ohp')).faults).toEqual([])
+    // 開始時が分からなければ判定しない
+    expect(analyzeSet(reps5({ trunkLeanBack: 40 }), ctx('ohp')).faults).toEqual([])
+  })
+
+  it('ohp lean-back：primaryCue で他の崩れより優先する', () => {
+    const m = { trunkLeanBack: 17, trunkLeanBackBaseline: 0, elbowFlexionBottom: 20 }
+    const r = analyzeSet(reps5(m), ctx('ohp'))
+    expect(codesOf(r).sort()).toEqual(['lean-back', 'shallow'])
+    expect(r.primaryCue).toBe('お腹に力を入れ、肋骨を下げる')
+  })
+
+  it('ohp shallow：基準なしは肘の屈曲 70° 未満、基準ありは D < 0.9', () => {
+    expect(codesOf(analyzeSet(reps5({ elbowFlexionBottom: 65 }), ctx('ohp')))).toEqual(['shallow'])
+    expect(analyzeSet(reps5({ elbowFlexionBottom: 70 }), ctx('ohp')).faults).toEqual([])
+    expect(codesOf(analyzeSet(reps5({ elbowFlexionBottom: 90 }, { romDeg: 50 }), ctx('ohp', { baseline: BASE })))).toEqual(['shallow'])
+    // 基準があるときは肘の屈曲では判定しない
+    expect(analyzeSet(reps5({ elbowFlexionBottom: 30 }, { romDeg: 60 }), ctx('ohp', { baseline: BASE })).faults).toEqual([])
+  })
+
+  it('lateral swing：体幹の振れ 15° 超。左右差は faults に入れない', () => {
+    expect(codesOf(analyzeSet(reps5({ torsoRange: 18 }), ctx('lateral')))).toEqual(['swing'])
+    expect(analyzeSet(reps5({ torsoRange: 15, abductionAsymmetry: 30 }), ctx('lateral')).faults).toEqual([])
+  })
+
+  it('pulldown swing：体幹の振れ 20° 超。後傾は崩れにしない', () => {
+    expect(codesOf(analyzeSet(reps5({ torsoRange: 22 }), ctx('pulldown')))).toEqual(['swing'])
+    expect(analyzeSet(reps5({ torsoRange: 20, trunkLeanBack: 35 }), ctx('pulldown')).faults).toEqual([])
+  })
+
+  it('pulldown partial-top：基準なしは肘の内角 150° 未満、基準ありは 基準の最大角 − 15° 未満', () => {
+    expect(codesOf(analyzeSet(reps5({ elbowExtensionTop: 140 }), ctx('pulldown')))).toEqual(['partial-top'])
+    expect(analyzeSet(reps5({ elbowExtensionTop: 150 }), ctx('pulldown')).faults).toEqual([])
+    const b = { romDeg: 100, minAngle: 60, maxAngle: 170 }
+    // 基準 170 − 15 = 155：152 は出る、156 は出ない（romDeg を基準に合わせて shallow 系を避ける）
+    expect(codesOf(analyzeSet(reps5({ elbowExtensionTop: 152 }, { romDeg: 100 }), ctx('pulldown', { baseline: b })))).toEqual(['partial-top'])
+    expect(analyzeSet(reps5({ elbowExtensionTop: 156 }, { romDeg: 100 }), ctx('pulldown', { baseline: b })).faults).toEqual([])
+  })
+
+  it('ohext shallow：基準なしは肘の屈曲 90° 未満、基準ありは D < 0.9', () => {
+    expect(codesOf(analyzeSet(reps5({ elbowFlexionBottom: 80 }), ctx('ohext')))).toEqual(['shallow'])
+    expect(analyzeSet(reps5({ elbowFlexionBottom: 90 }), ctx('ohext')).faults).toEqual([])
+    expect(codesOf(analyzeSet(reps5({ elbowFlexionBottom: 120 }, { romDeg: 50 }), ctx('ohext', { baseline: BASE })))).toEqual(['shallow'])
+    expect(analyzeSet(reps5({ elbowFlexionBottom: 20 }, { romDeg: 60 }), ctx('ohext', { baseline: BASE })).faults).toEqual([])
+  })
+
+  it('ohext elbow-drift：上腕の振れ 25° 超', () => {
+    expect(codesOf(analyzeSet(reps5({ elbowFlexionBottom: 95, upperArmRange: 30 }), ctx('ohext')))).toEqual(['elbow-drift'])
+    expect(analyzeSet(reps5({ elbowFlexionBottom: 95, upperArmRange: 25 }), ctx('ohext')).faults).toEqual([])
+  })
+
+  it('bss shallow：基準なしは前脚の膝屈曲 78° 未満、基準ありは D < 0.9。前傾は崩れにしない', () => {
+    expect(codesOf(analyzeSet(reps5({ kneeFlexionBottom: 70 }), ctx('bss')))).toEqual(['shallow'])
+    expect(analyzeSet(reps5({ kneeFlexionBottom: 78, trunkLeanMax: 80 }), ctx('bss')).faults).toEqual([])
+    expect(codesOf(analyzeSet(reps5({ kneeFlexionBottom: 120 }, { romDeg: 50 }), ctx('bss', { baseline: BASE })))).toEqual(['shallow'])
+    expect(analyzeSet(reps5({ kneeFlexionBottom: 40 }, { romDeg: 60 }), ctx('bss', { baseline: BASE })).faults).toEqual([])
+  })
+
+  it('bss：note に前傾は臀筋寄りのやり方である旨', () => {
+    expect(analyzeSet(reps5({ kneeFlexionBottom: 100 }), ctx('bss')).emphasis.note).toContain('上体の前傾は臀筋寄りのやり方です')
+  })
+
+  it('共通：fast-down・rom-drop は新種目でも出る', () => {
+    const issues = [issue('fast-down'), issue('rom-drop')]
+    const r = analyzeSet(reps5({ kneeAngleBottom: 160 }, { issues }), ctx('rdl'))
+    expect(codesOf(r).sort()).toEqual(['fast-down', 'rom-drop'])
+  })
+
+  it('信頼度 0.6 未満のレップは検出に使わない', () => {
+    const reps = [rep(1, {}, { kneeAngleBottom: 100, confidence: 0.5 }), rep(2, {}, { kneeAngleBottom: 160 })]
+    expect(analyzeSet(reps, ctx('rdl')).faults).toEqual([])
+  })
+
+  it('各崩れに label・cue・drills・evidence が付く', () => {
+    const r = analyzeSet(reps5({ kneeAngleBottom: 120 }), ctx('rdl'))
+    const f = r.faults[0]
+    expect(f.cue).toBe('すねを床と垂直に保つ')
+    expect(f.label).toContain('膝が曲がりすぎ')
+    expect(f.drills.length).toBeGreaterThan(0)
+    expect(f.evidence).toContain('暫定')
+  })
+
+  it('各崩れのキュー文言', () => {
+    const cue = (key: FormExerciseKey, m: Partial<RepMetrics>, o: Partial<FormContext> = {}) =>
+      analyzeSet(reps5(m), ctx(key, o)).faults[0].cue
+    expect(cue('ohp', { elbowFlexionBottom: 50 })).toBe('バーを顎の高さまで下ろす')
+    expect(cue('lateral', { torsoRange: 30 })).toBe('上体を止めたまま腕だけ')
+    expect(cue('pulldown', { torsoRange: 30 })).toBe('胸を張ったまま、肘を下へ')
+    expect(cue('pulldown', { elbowExtensionTop: 100 })).toBe('バーに引き上げられるまで腕を伸ばす')
+    expect(cue('ohext', { elbowFlexionBottom: 50 })).toBe('手を首の後ろまで下ろす')
+    expect(cue('ohext', { elbowFlexionBottom: 95, upperArmRange: 40 })).toBe('肘を天井に向けたまま')
+    expect(cue('bss', { kneeFlexionBottom: 50 })).toBe('後ろ膝を床に近づける')
+    expect(analyzeSet(reps5({}, { romDeg: 30 }), ctx('rdl', { baseline: BASE })).faults[0].cue).toBe('お尻を後ろの壁へ')
+  })
+})
+
+describe('追加6種目：原因の候補', () => {
+  it('bss shallow：基準なしの確信度は最大 low、基準ありなら上がりうる', () => {
+    const noBase = analyzeSet(reps5({ kneeFlexionBottom: 70 }), ctx('bss')).faults[0]
+    expect(noBase.causes.every(c => c.confidence === 'low')).toBe(true)
+    const h = (n: number) => summary({ key: 'bss', faultCounts: { shallow: 5 }, weight: n })
+    const withBase = analyzeSet(
+      reps5({ kneeFlexionBottom: 100 }, { romDeg: 40 }),
+      ctx('bss', { baseline: BASE, history: [h(30), h(30), h(30)], weight: 40 }),
+    ).faults[0]
+    expect(withBase.causes.some(c => c.confidence !== 'low')).toBe(true)
+  })
+
+  it('ohp lean-back の原因は 重量・疲労・技術 に限られる', () => {
+    const reps = [1, 2, 3, 4, 5, 6].map(i =>
+      rep(i, {}, { trunkLeanBack: i >= 5 ? 30 : 5, trunkLeanBackBaseline: 0, velocityLossPct: i >= 5 ? 30 : 0 }))
+    const f = analyzeSet(reps, ctx('ohp')).faults.find(x => x.code === 'lean-back')!
+    expect(f.causes.length).toBeGreaterThan(0)
+    expect(f.causes.every(c => ['load', 'fatigue', 'technique'].includes(c.cause))).toBe(true)
+    expect(f.causes[0].cause).toBe('fatigue')
+  })
+
+  it('rdl knee-bend の原因は技術だけ（確信度は最大 mid）', () => {
+    const f = analyzeSet(reps5({ kneeAngleBottom: 110 }), ctx('rdl')).faults[0]
+    expect(f.causes.every(c => c.cause === 'technique')).toBe(true)
+    expect(f.causes.every(c => c.confidence !== 'high')).toBe(true)
+  })
+})
+
+describe('追加6種目：履歴の要約と前回比較', () => {
+  it('toSessionSummary に種目キーと崩れ回数が入る', () => {
+    const c = ctx('ohp')
+    const reps = reps5({ trunkLeanBack: 30, trunkLeanBackBaseline: 0 })
+    const s = toSessionSummary(analyzeSet(reps, c), reps, c, '2026-11-25')
+    expect(s.key).toBe('ohp')
+    expect(s.faultCounts).toEqual({ 'lean-back': 5 })
+  })
+})

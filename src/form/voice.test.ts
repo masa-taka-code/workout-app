@@ -93,3 +93,34 @@ describe('voice', () => {
     expect(cueVoiceText('squat', 'no-such-code')).toBeUndefined()
   })
 })
+
+describe('cueVoiceText：追加6種目', () => {
+  it('各崩れの短い声（12文字以内）。shallow・swing は種目ごとに違う', () => {
+    const cases: Array<[Parameters<typeof cueVoiceText>[0], string, string]> = [
+      ['rdl', 'knee-bend', 'すねは床と垂直に'],
+      ['rdl', 'shallow-hinge', 'お尻を後ろの壁へ'],
+      ['ohp', 'lean-back', 'お腹に力、肋骨を下げる'],
+      ['ohp', 'shallow', '顎の高さまで下ろす'],
+      ['lateral', 'swing', '上体を止めて腕だけ'],
+      ['pulldown', 'swing', '胸を張って肘を下へ'],
+      ['pulldown', 'partial-top', '上で腕を伸ばしきる'],
+      ['ohext', 'shallow', '首の後ろまで下ろす'],
+      ['ohext', 'elbow-drift', '肘は天井に向けたまま'],
+      ['bss', 'shallow', '後ろ膝を床へ'],
+    ]
+    for (const [key, code, text] of cases) {
+      expect(cueVoiceText(key, code)).toBe(text)
+      expect(text.length).toBeLessThanOrEqual(12)
+    }
+  })
+
+  it('fast-down は新種目でも共通の声', () => {
+    expect(cueVoiceText('rdl', 'fast-down')).toBe('ゆっくり下ろす')
+  })
+
+  it('既存3種目の声は変わらない', () => {
+    expect(cueVoiceText('squat', 'shallow')).toBe('お尻を箱へ')
+    expect(cueVoiceText('curl', 'swing')).toBe('背中を壁に')
+    expect(cueVoiceText('bench', 'shallow')).toBe('胸まで下ろす')
+  })
+})

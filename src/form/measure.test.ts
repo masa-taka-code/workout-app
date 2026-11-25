@@ -9,10 +9,10 @@ import type { MeasureFrame, RepWindow, SetStats } from './measure'
 import { SIDE_INDEX } from './rules'
 import type { Joint } from './rules'
 import {
-  benchPose, curlPose, repPath, setVisibility, shiftPose, squatPose, worldPose,
+  benchPose, bssPose, curlPose, lateralPose, ohextPose, ohpPose, rdlPose, repPath, setVisibility, shiftPose, squatPose, worldPose,
 } from './testPoses'
 import type { PathFrame } from './testPoses'
-import type { Pose, RepMetrics, RepResult } from './types'
+import type { FormExerciseKey, Pose, RepMetrics, RepResult } from './types'
 import { LM } from './types'
 
 const DT = 1000 / 30
@@ -30,7 +30,7 @@ function concat(paths: { top: number; bottoms: number[]; downSec: number; upSec:
 }
 
 function runAll(
-  key: 'squat' | 'bench' | 'curl',
+  key: FormExerciseKey,
   frames: PathFrame[],
   make: (f: PathFrame, i: number) => Pose,
   world?: (f: PathFrame, i: number) => Pose | undefined,
@@ -429,6 +429,158 @@ describe('curl の指標', () => {
     expect(x.timeInStretch).toBeUndefined()
     expect(x.kneeFlexionBottom).toBeUndefined()
     expect(x.barPathDrift).toBeUndefined()
+  })
+})
+
+describe('追加6種目の指標', () => {
+  const path = { top: 170, bottoms: [80], downSec: 1.5, upSec: 1.5 }
+  const frames = concat([path])
+  /** 深い位置（主関節 100° 未満）にいるフレームか */
+  const deep = (f: PathFrame) => f.angle < 100
+  const latPath = concat([{ top: 170, bottoms: [80], downSec: 1.2, upSec: 1.5 }])
+
+  it('rdl：最下点の股関節屈曲 = 180 − 股関節角、膝の内角を出す（膝一定なら 165°、曲げすぎなら 120°）', () => {
+    const rdlPath = concat([{ ...path, bottoms: [95] }])
+    const reps = runAll('rdl', rdlPath, (f) => rdlPose(f.angle, 165))
+    expect(reps).toHaveLength(1)
+    expect(reps[0].minAngle).toBeCloseTo(95, 0)
+    expect(m(reps[0]).hipFlexionBottom).toBeCloseTo(85, 0)
+    expect(m(reps[0]).kneeAngleBottom).toBeCloseTo(165, 0)
+    const bent = runAll('rdl', rdlPath, (f) => rdlPose(f.angle, 120))
+    expect(m(bent[0]).kneeAngleBottom).toBeCloseTo(120, 0)
+    expect(m(bent[0]).hipFlexionBottom).toBeCloseTo(85, 0)
+    // squat 用の指標・伸張滞在率は出さない
+    expect(m(reps[0]).kneeFlexionBottom).toBeUndefined()
+    expect(m(reps[0]).timeInStretch).toBeUndefined()
+  })
+
+  it('ohp：肘の屈曲 = 180 − 最小角、後傾の最大と開始時の後傾（反りの増加）を出す', () => {
+    const reps = runAll('ohp', frames, (f) => ohpPose(f.angle, deep(f) ? 25 : 5))
+    expect(reps).toHaveLength(1)
+    expect(m(reps[0]).elbowFlexionBottom).toBeCloseTo(100, 0)
+    expect(m(reps[0]).trunkLeanBack).toBeCloseTo(25, 0)
+    expect(m(reps[0]).trunkLeanBackBaseline).toBeCloseTo(5, 0)
+  })
+
+  it('ohp：前傾は後傾 0 とする。体が左向きでも後ろへの反りを出す', () => {
+    const fwd = runAll('ohp', frames, (f) => ohpPose(f.angle, -10))
+    expect(m(fwd[0]).trunkLeanBack).toBe(0)
+    expect(m(fwd[0]).trunkLeanBackBaseline).toBe(0)
+    const mirror = (p: Pose): Pose => p.map((q) => ({ ...q, x: 1 - q.x }))
+    const left = runAll('ohp', frames, (f) => mirror(ohpPose(f.angle, deep(f) ? 25 : 5)))
+    expect(m(left[0]).trunkLeanBack).toBeCloseTo(25, 0)
+  })
+
+  it('lateral：左右の大きい方の外転で数え、最大外転・左右差・体幹の振れを出す（正面で ok）', () => {
+    const reps = runAll('lateral', latPath, (f) => lateralPose(180 - f.angle, 180 - f.angle - (deep(f) ? 20 : 0), deep(f) ? 20 : 0))
+    expect(reps).toHaveLength(1)
+    // 主関節 = 180 − 大きい方（左）の外転
+    expect(reps[0].minAngle).toBeCloseTo(80, 0)
+    expect(m(reps[0]).abductionTop).toBeCloseTo(100, 0)
+    expect(m(reps[0]).abductionAsymmetry).toBeCloseTo(20, 0)
+    expect(m(reps[0]).torsoRange).toBeCloseTo(20, 0)
+    expect(m(reps[0]).view).toBe('front')
+    expect(m(reps[0]).viewOk).toBe('ok')
+  })
+
+  it('lateral：右腕の方が高く上がるときは右の外転で数える。左右が同じなら左右差 0、上体が動かなければ振れ 0', () => {
+    const r = runAll('lateral', latPath, (f) => lateralPose(180 - f.angle - 15, 180 - f.angle))
+    expect(r[0].minAngle).toBeCloseTo(80, 0)
+    expect(m(r[0]).abductionTop).toBeCloseTo(100, 0)
+    const even = runAll('lateral', latPath, (f) => lateralPose(180 - f.angle))
+    expect(m(even[0]).abductionAsymmetry).toBeCloseTo(0, 0)
+    expect(m(even[0]).torsoRange).toBeCloseTo(0, 0)
+  })
+
+  it('lateral：撮影の向きは正面が ok、真横が ng（world あり φ=0 は真横、φ=90 は正面）', () => {
+    const side = runAll('lateral', latPath, (f) => lateralPose(180 - f.angle), () => worldPose(0))
+    expect(m(side[0]).view).toBe('side')
+    expect(m(side[0]).viewOk).toBe('ng')
+    const front = runAll('lateral', latPath, (f) => lateralPose(180 - f.angle), () => worldPose(85))
+    expect(m(front[0]).view).toBe('front')
+    expect(m(front[0]).viewOk).toBe('ok')
+    const slant = runAll('lateral', latPath, (f) => lateralPose(180 - f.angle), () => worldPose(65))
+    expect(m(slant[0]).viewOk).toBe('caution')
+  })
+
+  it('pulldown：後傾の最大・体幹の振れ・上で伸ばしきったときの肘の内角を出す', () => {
+    const pd = concat([{ top: 170, bottoms: [60], downSec: 1.5, upSec: 1.5 }])
+    const reps = runAll('pulldown', pd, (f) => ohpPose(f.angle, deep(f) ? 20 : 5))
+    expect(reps).toHaveLength(1)
+    expect(m(reps[0]).trunkLeanBack).toBeCloseTo(20, 0)
+    expect(m(reps[0]).torsoRange).toBeCloseTo(15, 0)
+    expect(m(reps[0]).elbowExtensionTop).toBeCloseTo(170, 0)
+    expect(m(reps[0]).trunkLeanBackBaseline).toBeUndefined()
+  })
+
+  it('pulldown：上で 160° までしか伸ばさないと elbowExtensionTop は 160°', () => {
+    const pd = concat([{ top: 160, bottoms: [60], downSec: 1.5, upSec: 1.5 }])
+    const reps = runAll('pulldown', pd, (f) => ohpPose(f.angle))
+    expect(reps).toHaveLength(1)
+    expect(m(reps[0]).elbowExtensionTop).toBeCloseTo(160, 0)
+  })
+
+  it('pulldown：上で 140° までしか伸ばさないレップも数え、elbowExtensionTop は 140°（基準なしの partial-top の判定用）', () => {
+    const pd = concat([{ top: 140, bottoms: [60], downSec: 1.5, upSec: 1.5 }])
+    const reps = runAll('pulldown', pd, (f) => ohpPose(f.angle))
+    expect(reps).toHaveLength(1)
+    expect(m(reps[0]).elbowExtensionTop).toBeCloseTo(140, 0)
+  })
+
+  it('pulldown：手首が下がる動作が上げる（concentric）動作。2 レップ目が 2 倍遅ければ速度低下 約 50%', () => {
+    const pd = concat([
+      { top: 170, bottoms: [60], downSec: 1, upSec: 1 },
+      { top: 170, bottoms: [60], downSec: 2, upSec: 1 },
+    ])
+    const reps = runAll('pulldown', pd, (f) => ohpPose(f.angle))
+    expect(reps).toHaveLength(2)
+    expect(m(reps[0]).velocityLossPct).toBe(0)
+    // pulldown の top を 130° に下げたため、計測区間（130° 未満）が短くなりフレームの刻みの影響が増える。許容を 8 → 12 に広げた（2026-11-26）
+    expect(Math.abs((m(reps[1]).velocityLossPct as number) - 50)).toBeLessThan(12)
+  })
+
+  it('ohext：肘の屈曲 = 180 − 最小角、上腕の振れ（鉛直からの角度の範囲）を出す', () => {
+    const still = runAll('ohext', frames, (f) => ohextPose(f.angle, 0))
+    expect(still).toHaveLength(1)
+    expect(m(still[0]).elbowFlexionBottom).toBeCloseTo(100, 0)
+    expect(m(still[0]).upperArmRange).toBeCloseTo(0, 0)
+    const drift = runAll('ohext', frames, (f) => ohextPose(f.angle, deep(f) ? 10 : -5))
+    expect(m(drift[0]).upperArmRange).toBeCloseTo(15, 0)
+    expect(m(drift[0]).elbowFlexionBottom).toBeCloseTo(100, 0)
+  })
+
+  it('bss：前脚の膝の屈曲と体幹の前傾の最大を出す（前脚が右でも左でも）', () => {
+    for (const side of ['left', 'right'] as const) {
+      const reps = runAll('bss', frames, (f) => bssPose(f.angle, deep(f) ? 25 : 5, side))
+      expect(reps).toHaveLength(1)
+      expect(reps[0].minAngle).toBeCloseTo(80, 0)
+      expect(m(reps[0]).kneeFlexionBottom).toBeCloseTo(100, 0)
+      expect(m(reps[0]).trunkLeanMax).toBeCloseTo(25, 0)
+    }
+  })
+
+  it('bss：後ろ脚の方が visibility が高くても、足首が前にある脚を前脚にする', () => {
+    // 前脚＝右（visibility 0.7）、後ろ脚＝左（visibility 1）
+    const reps = runAll('bss', frames, (f) => bssPose(f.angle, 5, 'right', { visLeft: 1, visRight: 0.7 }))
+    expect(reps).toHaveLength(1)
+    expect(reps[0].minAngle).toBeCloseTo(80, 0)
+  })
+
+  it('bss：鼻が見えず向きが分からないときは visibility の高い方の脚を使う', () => {
+    const p = bssPose(150, 5, 'right', { visLeft: 1, visRight: 0.7 })
+    p[LM.nose] = { ...p[LM.nose], visibility: 0 }
+    // 左（後ろ脚）の膝の内角は約 116°、前脚（右）は 150°
+    expect(new RepTracker('bss').push(p, 0).angles.knee).toBeLessThan(130)
+    const withNose = bssPose(150, 5, 'right', { visLeft: 1, visRight: 0.7 })
+    expect(new RepTracker('bss').push(withNose, 0).angles.knee).toBeCloseTo(150, 0)
+  })
+
+  it('新6種目は squat・bench・curl 専用の指標を出さない', () => {
+    const x = m(runAll('ohp', frames, (f) => ohpPose(f.angle))[0])
+    expect(x.kneeFlexionBottom).toBeUndefined()
+    expect(x.barPathDrift).toBeUndefined()
+    expect(x.shoulderAngleAtBottom).toBeUndefined()
+    expect(x.timeInStretch).toBeUndefined()
   })
 })
 

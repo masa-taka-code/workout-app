@@ -22,6 +22,8 @@ const SQUAT_DEEP_DEG = 140
 /** curl：伸張域の入口の肘の内角 112°（屈曲 68°：Pedrosa 2023）から 170° まで */
 const CURL_STRETCH_START_DEG = 112
 const CURL_STRETCH_END_DEG = 170
+/** ohext：肘を曲げる目安（Maeo 2023 の可動域：肘 90° まで曲げる。単一研究・抄録のみ確認） */
+const OHEXT_FLEXION_DEG = 90
 /** 到達度がこれ以上なら「届いた」レップ（一貫性の数え方） */
 const REACH_OK = 0.9
 /** ストレッチスコアの重み（根拠のない仮の値）：到達度 0.5・一貫性 0.3・滞在率 0.2 */
@@ -64,6 +66,25 @@ const TH = {
   barDrift: 0.25,
   torsoSwing: 15,
   upperArmSwing: 25,
+  // --- 追加6種目（すべて暫定。研究で確かめられた値ではない） ---
+  /** rdl：最下点の膝の内角がこれ未満だと「膝を曲げすぎ（スクワットに近い）」 */
+  rdlKneeAngle: 130,
+  /** ohp：体幹の後傾がレップ開始時より増えた量（度） */
+  ohpLeanBackIncrease: 15,
+  /** ohp：基準動画が無いときの「浅い」＝最下点の肘屈曲がこれ未満 */
+  ohpElbowFlexion: 70,
+  /** lateral：体幹の振れ（度）。左右差の参考表示のしきい値も同じ値 */
+  lateralTorsoSwing: 15,
+  lateralAsymmetry: 15,
+  /** pulldown：体幹の振れ（度） */
+  pulldownTorsoSwing: 20,
+  /** pulldown：上で伸ばしきった肘の内角の下限（基準動画が無いとき）／基準の最大角からの許容（あるとき） */
+  pulldownElbowTop: 150,
+  pulldownElbowTopMargin: 15,
+  /** ohext：上腕の前後の振れ（度） */
+  ohextUpperArmSwing: 25,
+  /** bss：基準動画が無いときの「浅い」＝前脚の膝屈曲（squat と同じ 90° − 誤差 12°） */
+  bssKneeFlexion: 78,
 }
 
 /** 前回との比較で「変化あり」とみなすストレッチ点の差（暫定） */
@@ -85,6 +106,18 @@ const TARGETS: Record<FormExerciseKey, EmphasisTarget[]> = {
     { id: 'long', label: '力こぶの肩側' },
     { id: 'distal', label: '力こぶの肘側' },
   ],
+  rdl: [
+    { id: 'hams', label: 'もも裏' },
+    { id: 'glutes', label: 'お尻' },
+  ],
+  ohp: [],
+  lateral: [],
+  pulldown: [],
+  ohext: [{ id: 'long', label: '腕の裏の長頭' }],
+  bss: [
+    { id: 'quads', label: '太もも前' },
+    { id: 'glutes', label: 'お尻' },
+  ],
 }
 
 /** 狙いの部位ごとのコツ（根拠つき） */
@@ -102,6 +135,22 @@ const TIPS: Record<string, string[]> = {
     '下で伸ばしきる（座位のプリーチャーカールで、伸ばしきる側の可動域のとき肘側の筋厚が大きく増えた研究：Pedrosa 2023）',
     'プリーチャーカール（肘側の筋厚の増加が大きかった：Kassiano ら 2025、女性63人・8週）',
   ],
+}
+
+/** 種目ごとに内容が違う狙い（キーは「種目:id」。こちらが TIPS より優先）。いずれも筋電の研究で、筋肥大は未検証 */
+const TIPS_BY_KEY: Record<string, string[]> = {
+  'rdl:hams': ['膝を軽く曲げたまま、お尻を後ろへ引いて股関節を深く曲げる（半腱様筋の筋電が大きい：Coratella 2022）。筋電の研究で、筋肥大は未検証'],
+  'rdl:glutes': ['膝を伸ばし気味にする（臀筋の筋電が大きい：Coratella 2022）。筋電の研究で、筋肥大は未検証'],
+  'ohext:long': [
+    '腕を頭上に上げたまま行う（頭上の方が体の横より長頭の筋量が大きく増えた：+28.5% 対 +19.6%、Maeo 2023）',
+    '扱える重量は軽くなるが問題ない（頭上側は34〜39% 軽かった：Maeo 2023）',
+  ],
+  'bss:quads': ['上体を立て、前脚の膝を前に出す。筋電の研究で、筋肥大は未検証'],
+  'bss:glutes': ['上体を少し前に倒し、足幅をやや広めにする（臀筋の筋電が増える：Aygun-Polat 2025）。筋電の研究で、筋肥大は未検証'],
+}
+
+function tipsFor(key: FormExerciseKey, id: string): string[] {
+  return TIPS_BY_KEY[`${key}:${id}`] ?? TIPS[id] ?? []
 }
 
 /** 種目ごとの「効かせたい部位」の選択肢 */
@@ -141,7 +190,11 @@ function reachOf(r: RepResult, ctx: FormContext): number | undefined {
   if (ctx.key === 'curl') {
     return clamp01((r.maxAngle - CURL_STRETCH_START_DEG) / (CURL_STRETCH_END_DEG - CURL_STRETCH_START_DEG))
   }
-  return undefined // bench は基準動画が無いと判定できない
+  if (ctx.key === 'ohext') {
+    const f = r.metrics?.elbowFlexionBottom
+    return f === undefined ? undefined : clamp01(f / OHEXT_FLEXION_DEG)
+  }
+  return undefined // bench・rdl・ohp・lateral・pulldown・bss は基準動画が無いと判定できない
 }
 
 function stretchOf(usable: RepResult[], ctx: FormContext): FormReport['stretch'] {
@@ -162,9 +215,14 @@ function stretchOf(usable: RepResult[], ctx: FormContext): FormReport['stretch']
   const raw = time === undefined
     ? (W_REACH * reach + W_CONSISTENCY * consistency) / (W_REACH + W_CONSISTENCY)
     : W_REACH * reach + W_CONSISTENCY * consistency + W_TIME * time
-  const reference = ctx.baseline && ctx.baseline.romDeg > 0
-    ? 'あなたの基準動画'
-    : ctx.key === 'squat' ? '論文の基準（膝屈曲 90〜140°）' : '論文の基準（肘の伸張域 112〜170°）'
+  const hasBaseline = !!ctx.baseline && ctx.baseline.romDeg > 0
+  let reference: string
+  if (hasBaseline) {
+    reference = ctx.key === 'rdl'
+      ? 'あなたの基準動画（股関節を深く曲げてハムストリングを伸ばす方向が有利：Maeo 2021、座位レッグカールの研究からの類推）'
+      : 'あなたの基準動画'
+  } else if (ctx.key === 'ohext') reference = '研究の可動域（肘を 90° まで曲げる：Maeo 2023）'
+  else reference = ctx.key === 'squat' ? '論文の基準（膝屈曲 90〜140°）' : '論文の基準（肘の伸張域 112〜170°）'
   return { score: Math.round(100 * raw), reach, consistency, timeInStretch: time, reference }
 }
 
@@ -217,6 +275,46 @@ function detectFaults(r: RepResult, ctx: FormContext): Flag[] {
     else if (v1.has('shallow')) add('shallow')
     if (m?.hipRise !== undefined && m.hipRise > TH.hipRise) add('hip-rise', (m.hipRise - TH.hipRise) / TH.hipRise)
     if (m?.barPathDrift !== undefined && m.barPathDrift > TH.barDrift) add('bar-drift', (m.barPathDrift - TH.barDrift) / TH.barDrift)
+  } else if (ctx.key === 'rdl') {
+    const knee = m?.kneeAngleBottom
+    if (knee !== undefined && knee < TH.rdlKneeAngle) add('knee-bend', (TH.rdlKneeAngle - knee) / TH.rdlKneeAngle)
+    // 背中の丸まりは測れないので検出しない（report の note で案内）
+    if (baselineD !== undefined && baselineD < REACH_OK) add('shallow-hinge', REACH_OK - baselineD)
+  } else if (ctx.key === 'ohp') {
+    // 反りの増加：レップ開始時の後傾との差。どちらかが無ければ判定しない
+    const back = m?.trunkLeanBack
+    const start = m?.trunkLeanBackBaseline
+    if (back !== undefined && start !== undefined && back - start > TH.ohpLeanBackIncrease) {
+      add('lean-back', (back - start - TH.ohpLeanBackIncrease) / TH.ohpLeanBackIncrease)
+    }
+    if (baselineD !== undefined) { if (baselineD < REACH_OK) add('shallow', REACH_OK - baselineD) }
+    else if (m?.elbowFlexionBottom !== undefined && m.elbowFlexionBottom < TH.ohpElbowFlexion) {
+      add('shallow', (TH.ohpElbowFlexion - m.elbowFlexionBottom) / TH.ohpElbowFlexion)
+    }
+  } else if (ctx.key === 'lateral') {
+    // 左右差（abductionAsymmetry）は崩れに入れず、emphasis の note で参考表示する
+    const torso = m?.torsoRange
+    if (torso !== undefined && torso > TH.lateralTorsoSwing) add('swing', (torso - TH.lateralTorsoSwing) / TH.lateralTorsoSwing)
+  } else if (ctx.key === 'pulldown') {
+    const torso = m?.torsoRange
+    if (torso !== undefined && torso > TH.pulldownTorsoSwing) add('swing', (torso - TH.pulldownTorsoSwing) / TH.pulldownTorsoSwing)
+    const top = m?.elbowExtensionTop
+    if (top !== undefined) {
+      const limit = ctx.baseline ? ctx.baseline.maxAngle - TH.pulldownElbowTopMargin : TH.pulldownElbowTop
+      if (top < limit) add('partial-top', (limit - top) / limit)
+    }
+  } else if (ctx.key === 'ohext') {
+    if (baselineD !== undefined) { if (baselineD < REACH_OK) add('shallow', REACH_OK - baselineD) }
+    else if (m?.elbowFlexionBottom !== undefined && m.elbowFlexionBottom < OHEXT_FLEXION_DEG) {
+      add('shallow', (OHEXT_FLEXION_DEG - m.elbowFlexionBottom) / OHEXT_FLEXION_DEG)
+    }
+    const arm = m?.upperArmRange
+    if (arm !== undefined && arm > TH.ohextUpperArmSwing) add('elbow-drift', (arm - TH.ohextUpperArmSwing) / TH.ohextUpperArmSwing)
+  } else if (ctx.key === 'bss') {
+    const flex = m?.kneeFlexionBottom
+    if (baselineD !== undefined) { if (baselineD < REACH_OK) add('shallow', REACH_OK - baselineD) }
+    else if (flex !== undefined && flex < TH.bssKneeFlexion) add('shallow', (TH.bssKneeFlexion - flex) / TH.bssKneeFlexion)
+    // 前傾は崩れにしない（note に記す）
   } else {
     if (v1.has('partial-bottom')) add('partial-bottom')
     if (v1.has('partial-top')) add('partial-top')
@@ -298,6 +396,7 @@ function emphasisOf(
       note: '割合は出せません。主に働く筋肉と補助の向きだけ示します。',
     }
   }
+  if (ctx.key !== 'curl') return emphasisOfNew(ctx, avg)
   let note = '力こぶの中の割合は出せません。'
   const sh = avg(r => r.metrics?.shoulderAngleAtBottom)
   if (sh !== undefined && sh < -SHOULDER_NOTE_DEG) {
@@ -306,6 +405,62 @@ function emphasisOf(
     note += '肩が曲がった位置（プリーチャー）です。女性63人・8週の研究では、プリーチャーで肘側（遠位）の筋厚の増加が大きかった（Kassiano ら 2025）。負荷のかかり方をそろえると差がないという研究もあります（Attarieh 2025）。'
   }
   return { distribution: [{ label: '力こぶ（上腕二頭筋）', muscles: ['上腕二頭筋'] }], note }
+}
+
+const DIRECTION_NOTE = '割合は出せません。主に働く筋肉と補助の向きだけ示します。'
+
+/** 追加6種目：主働筋・補助筋の向きだけ（割合なし）と、種目ごとの注記 */
+function emphasisOfNew(
+  ctx: FormContext, avg: (pick: (r: RepResult) => number | undefined) => number | undefined,
+): { distribution: EmphasisShare[]; note: string } {
+  switch (ctx.key) {
+    case 'rdl':
+      return {
+        distribution: [
+          { label: '主に働く：もも裏（ハムストリング）・お尻（大臀筋）', muscles: ['ハムストリング', '臀筋'] },
+          { label: '補助：背中の起立筋', muscles: ['背中'] },
+        ],
+        note: DIRECTION_NOTE + '背中の丸まりはこのアプリでは測れません（姿勢推定に背骨の点がないため）。鏡や動画で確認してください。',
+      }
+    case 'ohp':
+      return {
+        distribution: [
+          { label: '主に働く：肩（三角筋の前部・中部）・腕の裏', muscles: ['肩前部', '肩側部', '上腕三頭筋'] },
+        ],
+        note: DIRECTION_NOTE + '首の後ろへ下ろすと中部三角筋の筋電が大きいという研究がありますが、安全性のデータがないためおすすめしません（Coratella 2022）。',
+      }
+    case 'lateral': {
+      let note = DIRECTION_NOTE + 'ダンベルとケーブル、負荷のかかる位置の違いで筋肥大に差はありませんでした（Larsen 2025、Jones 2025）。'
+      const asym = avg(r => r.metrics?.abductionAsymmetry)
+      // 左右差は崩れに入れず、参考として知らせるだけ（暫定のしきい値）
+      if (asym !== undefined && asym > TH.lateralAsymmetry) note += '左右で上がる高さが違って見えます（参考）。'
+      return {
+        distribution: [{ label: '主に働く：肩の横（三角筋の中部）', muscles: ['肩側部'] }],
+        note,
+      }
+    }
+    case 'pulldown':
+      return {
+        distribution: [
+          { label: '主に働く：背中（広背筋）', muscles: ['背中'] },
+          { label: '補助：力こぶ・肩の後ろ', muscles: ['上腕二頭筋', '肩後部'] },
+        ],
+        note: DIRECTION_NOTE + '順手の方が逆手より、体の前に引く方が広背筋の筋電が大きい（筋電の研究）。約30°の後傾は広背筋の活動を変えません（Buonsenso 2025）。',
+      }
+    case 'ohext':
+      return {
+        distribution: [{ label: '主に働く：腕の裏（上腕三頭筋）', muscles: ['上腕三頭筋'] }],
+        note: DIRECTION_NOTE + '腕を頭上に上げると、長頭（肩をまたぐ部分）がより伸ばされます（Maeo 2023）。',
+      }
+    default: // bss
+      return {
+        distribution: [
+          { label: '主に働く：前脚の太もも前・お尻', muscles: ['大腿四頭筋', '臀筋'] },
+          { label: '補助：もも裏・内もも', muscles: ['ハムストリング'] },
+        ],
+        note: DIRECTION_NOTE + '上体の前傾は臀筋寄りのやり方です（Aygun-Polat 2025）。',
+      }
+  }
 }
 
 function targetShare(id: string, hip: number | undefined): number | undefined {
@@ -370,8 +525,8 @@ export function analyzeSet(reps: RepResult[], ctx: FormContext): FormReport {
   // 効き具合
   const emp = emphasisOf(usable, ctx)
   const losses = usable.map(r => r.metrics?.velocityLossPct).filter((v): v is number => v !== undefined)
-  // 筋肥大向けの目安（速度低下 25% 以上、Hickmott 2022）は squat と bench だけ。curl は出さない
-  const effort: FormReport['effort'] = losses.length && ctx.key !== 'curl'
+  // 筋肥大向けの目安（速度低下 25% 以上、Hickmott 2022）は squat と bench だけ。他の種目は出さない
+  const effort: FormReport['effort'] = losses.length && (ctx.key === 'squat' || ctx.key === 'bench')
     ? {
         velocityLossPct: Math.max(...losses),
         proximity: clamp01(Math.max(...losses) / HYPERTROPHY_LOSS_TARGET),
@@ -393,7 +548,7 @@ export function analyzeSet(reps: RepResult[], ctx: FormContext): FormReport {
       const base = P !== undefined && L !== undefined ? W_PROXIMITY * P + W_STRETCH * L : (P ?? L!)
       score = Math.round(100 * S * base)
     }
-    target = { id: t.id, label: t.label, share, score, tips: [...(TIPS[t.id] ?? [])] }
+    target = { id: t.id, label: t.label, share, score, tips: [...tipsFor(ctx.key, t.id)] }
   }
 
   // 崩れと原因

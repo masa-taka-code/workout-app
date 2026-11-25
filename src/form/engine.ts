@@ -8,6 +8,7 @@ import type {
 } from './types'
 import { CONFIG, MIN_VISIBILITY, SIDE_INDEX, computeAngles, formIssues, makeIssue } from './rules'
 import type { Joint, RepStats, Side } from './rules'
+import { LM } from './types'
 import { makeFrame, measureRep, median } from './measure'
 import type { MeasureFrame, SetStats } from './measure'
 
@@ -22,6 +23,8 @@ const SHORT_ROM_RATIO = 0.9
 const ROM_DROP_RATIO = 0.85
 const FAST_DOWN_SEC = 1.0
 const LEAN_CUE = '胸を起こして'
+/** bss：左右の足首の前後の差がこれ未満なら前脚を決めない（正規化座標） */
+const FRONT_LEG_MARGIN = 0.05
 
 /** 種目名から採点対応の種目キーを決める。対応していなければ undefined */
 export function formKeyFor(ex: Exercise): FormExerciseKey | undefined {
@@ -29,6 +32,12 @@ export function formKeyFor(ex: Exercise): FormExerciseKey | undefined {
   if (n.includes('スクワット') && !n.includes('ブルガリアン') && !n.includes('スプリット')) return 'squat'
   if (n.includes('ベンチプレス') && !n.includes('ダンベル') && !n.includes('インクライン')) return 'bench'
   if (n.includes('カール') && !n.includes('レッグ')) return 'curl'
+  if (n.includes('ルーマニアン') || n.includes('スティッフ')) return 'rdl'
+  if (n.includes('ショルダープレス')) return 'ohp'
+  if (n.includes('サイドレイズ') || n.includes('ラテラルレイズ')) return 'lateral'
+  if (n.includes('ラットプルダウン')) return 'pulldown'
+  if (n.includes('オーバーヘッドエクステンション')) return 'ohext'
+  if (n.includes('ブルガリアン')) return 'bss'
   return undefined
 }
 
@@ -41,6 +50,18 @@ export function setupGuide(key: FormExerciseKey): string {
       return 'ベンチの真横から、肩・肘・手首が入るように撮影してください。'
     case 'curl':
       return '真横から、肩・肘・手首・腰が入るように撮影してください。'
+    case 'rdl':
+      return '真横から、肩・腰・膝・足首が入るように撮影してください。上の位置（立った姿勢）から始めてください。'
+    case 'ohp':
+      return '真横から、肩・肘・手首・腰が入るように撮影してください。上の位置（腕を伸ばした姿勢）から始めてください。'
+    case 'lateral':
+      return '正面から、両肩・両腕・腰が入るように撮影してください。腕を下ろした姿勢から始めてください。'
+    case 'pulldown':
+      return '真横から、肩・肘・手首・腰が入るように撮影してください。上の位置（腕を伸ばした姿勢）から始めてください。'
+    case 'ohext':
+      return '真横から、肩・肘・手首が入るように撮影してください。上の位置（腕を伸ばした姿勢）から始めてください。'
+    case 'bss':
+      return '真横から、肩・腰・前脚の膝と足首が入るように撮影してください。カメラに近い側に前脚を置き、上の位置（立った姿勢）から始めてください。'
   }
 }
 
@@ -104,7 +125,7 @@ export class RepTracker {
     // 使う側が変わったら別の関節の角度なので、中央値の窓を捨てる
     if (prevSide && prevSide !== this.side) this.recent = {}
 
-    const raw = computeAngles(this.key, pts)
+    const raw = computeAngles(this.key, pts, pose)
     const angles: Record<string, number> = {}
     for (const name of Object.keys(raw)) {
       const win = [...(this.recent[name] ?? []), raw[name]].slice(-MEDIAN_WINDOW)
@@ -184,6 +205,19 @@ export class RepTracker {
 
   /** 左右のうち見えている側を選び、必要な関節が全部見えていればその座標を返す */
   private pickSide(pose: Pose, joints: Joint[]): Record<Joint, Landmark> | undefined {
+    if (this.key === 'bss') {
+      const front = this.pickFrontLeg(pose, joints)
+      if (front) {
+        const pts: Partial<Record<Joint, Landmark>> = {}
+        for (const j of joints) {
+          const lm = pose[SIDE_INDEX[front][j]]
+          if (!lm || (lm.visibility ?? 0) < MIN_VISIBILITY) return undefined
+          pts[j] = lm
+        }
+        this.side = front
+        return pts as Record<Joint, Landmark>
+      }
+    }
     const meanVis = (side: Side) => {
       let sum = 0
       for (const j of joints) sum += pose[SIDE_INDEX[side][j]]?.visibility ?? 0
@@ -202,6 +236,27 @@ export class RepTracker {
     }
     this.side = side
     return pts as Record<Joint, Landmark>
+  }
+
+  /**
+   * bss：足首が前にある方の脚を前脚とする（体の向きは鼻と両肩の中点の位置関係）。
+   * 向きが分からない、または片側しか見えていないときは undefined（通常の visibility の高い方に任せる）。
+   */
+  private pickFrontLeg(pose: Pose, joints: Joint[]): Side | undefined {
+    const seen = (side: Side) =>
+      joints.every(j => (pose[SIDE_INDEX[side][j]]?.visibility ?? 0) >= MIN_VISIBILITY)
+    if (!seen('left') || !seen('right')) return undefined
+    const nose = pose[LM.nose]
+    const ls = pose[LM.leftShoulder]
+    const rs = pose[LM.rightShoulder]
+    if (!nose || (nose.visibility ?? 0) < MIN_VISIBILITY || !ls || !rs) return undefined
+    const dx = nose.x - (ls.x + rs.x) / 2
+    if (Math.abs(dx) < 1e-6) return undefined
+    const facing = dx > 0 ? 1 : -1
+    const la = pose[SIDE_INDEX.left.ankle].x * facing
+    const ra = pose[SIDE_INDEX.right.ankle].x * facing
+    if (Math.abs(la - ra) < FRONT_LEG_MARGIN) return undefined
+    return la > ra ? 'left' : 'right'
   }
 
   private updateRep(
