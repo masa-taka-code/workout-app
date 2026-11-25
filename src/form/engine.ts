@@ -17,7 +17,13 @@ export function setupGuide(_key: FormExerciseKey): string {
 
 /** 1セット分のフレームを順に受け取り、レップを数えて採点する */
 export class RepTracker {
-  constructor(readonly key: FormExerciseKey, readonly baseline?: Baseline) {}
+  readonly key: FormExerciseKey
+  readonly baseline?: Baseline
+
+  constructor(key: FormExerciseKey, baseline?: Baseline) {
+    this.key = key
+    this.baseline = baseline
+  }
 
   /** timeMs は単調増加するミリ秒（performance.now() など） */
   push(_pose: Pose | undefined, _timeMs: number): FrameResult {
