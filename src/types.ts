@@ -30,7 +30,19 @@ export interface Exercise {
   targetRir: number
   primary: Muscle[]
   secondary: Muscle[]
+  /** 器具。barbell のときだけプレート計算を出す。未設定は other 扱い */
+  equipment?: Equipment
 }
+
+export type Equipment = 'barbell' | 'dumbbell' | 'machine' | 'bodyweight' | 'other'
+
+export const EQUIPMENTS: { value: Equipment; label: string }[] = [
+  { value: 'barbell', label: 'バーベル' },
+  { value: 'dumbbell', label: 'ダンベル' },
+  { value: 'machine', label: 'マシン・ケーブル' },
+  { value: 'bodyweight', label: '自重' },
+  { value: 'other', label: 'その他' },
+]
 
 export interface SetLog {
   weight: number
@@ -38,6 +50,8 @@ export interface SetLog {
   done: boolean
   /** あと何回できたか (Reps In Reserve)。未入力なら目標RIRどおりとみなす */
   rir?: number
+  /** セットごとのメモ（痛み・感覚など） */
+  note?: string
 }
 
 export type TargetKind = 'first' | 'increase' | 'reps' | 'deload'
@@ -50,6 +64,8 @@ export interface Target {
   sets: number
   rir: number
   reason: string
+  /** 注意表示（不調の日など）。量は変えない */
+  caution?: string
 }
 
 export type Condition = 'good' | 'normal' | 'bad'
@@ -80,6 +96,8 @@ export interface AppData {
   weeklyTargets: Partial<Record<Muscle, number>>
   /** 週目標の見直し（rampWeeklyTargets）を最後に行った週の月曜日 */
   lastRampWeek?: string
+  /** 休憩終了の音を鳴らすか（未設定は鳴らす） */
+  sound?: boolean
 }
 
 /** 各画面に渡す props */

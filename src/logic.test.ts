@@ -88,7 +88,11 @@ describe('今日の計画', () => {
     const d = data([session('2026-11-17', [entry([s(60, 10, 2), s(60, 10, 2), s(60, 10, 2)])])])
     const t = planExercise(bench, d, '2026-11-24')
     expect(t).toMatchObject({ kind: 'increase', weight: 62.5, sets: 4 }) // 先週の胸は3セット < 10
-    expect(planExercise(bench, d, '2026-11-24', 'bad').sets).toBe(3)
+    // 不調でもセット数は変えず、注意だけ出す
+    const bad = planExercise(bench, d, '2026-11-24', 'bad')
+    expect(bad.sets).toBe(4)
+    expect(bad.caution).toBeTruthy()
+    expect(t.caution).toBeUndefined()
   })
 
   it('1回あたりの上限を守る', () => {

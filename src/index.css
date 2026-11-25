@@ -150,6 +150,7 @@ textarea { width: 100%; resize: vertical; }
 .card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .target-line { font-weight: 600; }
 .target-deload { color: var(--warn); }
+.target-caution { color: var(--warn); font-size: 0.875rem; border-left: 3px solid var(--warn); padding-left: 8px; }
 .small { font-size: 0.8rem; }
 
 .set { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; border-top: 1px solid var(--border); }

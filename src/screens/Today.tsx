@@ -6,6 +6,9 @@ import type { Volume } from '../logic'
 import { uid } from '../storage'
 import NumInput from '../components/NumInput'
 import RestTimer from '../components/RestTimer'
+import SetNote from '../components/SetNote'
+import WarmupPanel from '../components/WarmupPanel'
+import { useWakeLock } from '../hooks/useWakeLock'
 
 const CONDITIONS: { value: Condition; label: string }[] = [
   { value: 'good', label: '好調' },
@@ -86,6 +89,9 @@ export default function Today({ data, setData }: ScreenProps) {
   const exById = new Map(data.exercises.map(e => [e.id, e]))
   const visible = (session?.entries ?? []).filter(e => exById.has(e.exerciseId))
 
+  // トレーニング中（今日の種目がある間）は画面を消さない
+  useWakeLock(visible.length > 0)
+
   return (
     <section className="screen">
       <h1 className="screen-title">{dateLabel()}</h1>
@@ -131,6 +137,8 @@ export default function Today({ data, setData }: ScreenProps) {
                     : `目標 ${num(t.weight)}kg × ${t.reps}回 × ${t.sets}セット（RIR ${t.rir}）`}
                 </p>
                 <p className="muted small">{t.reason}</p>
+                {t.caution && <p className="target-caution">{t.caution}</p>}
+                <WarmupPanel ex={ex} target={t} />
               </>
             )}
             {prev && <p className="muted">前回 {prev}</p>}
@@ -178,6 +186,11 @@ export default function Today({ data, setData }: ScreenProps) {
                     </button>
                   ))}
                 </div>
+                <SetNote
+                  value={s.note}
+                  label={`${i + 1}セット目のメモ`}
+                  onChange={note => updateSetLog(ex.id, i, { note })}
+                />
               </div>
             ))}
 
@@ -265,7 +278,7 @@ export default function Today({ data, setData }: ScreenProps) {
       </div>
 
       {timerRun !== undefined && (
-        <RestTimer key={timerRun} seconds={data.restSeconds} onSkip={() => setTimerRun(undefined)} />
+        <RestTimer key={timerRun} seconds={data.restSeconds} sound={data.sound ?? true} onSkip={() => setTimerRun(undefined)} />
       )}
     </section>
   )

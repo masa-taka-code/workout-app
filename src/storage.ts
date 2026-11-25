@@ -11,16 +11,16 @@ const ex = (s: Spec): Exercise => ({ id: uid(), ...s })
 
 /** 初期登録の種目。伸びた位置で負荷がかかる種目を多めに入れている */
 const DEFAULT_EXERCISES: Spec[] = [
-  { name: 'ベンチプレス', part: '胸', repMin: 6, repMax: 10, increment: 2.5, sets: 3, targetRir: 2, primary: ['胸'], secondary: ['上腕三頭筋', '肩前部'] },
-  { name: 'スクワット', part: '脚', repMin: 6, repMax: 10, increment: 2.5, sets: 3, targetRir: 2, primary: ['大腿四頭筋', '臀筋'], secondary: [] },
-  { name: 'ルーマニアンデッドリフト', part: '脚', repMin: 6, repMax: 10, increment: 2.5, sets: 3, targetRir: 2, primary: ['ハムストリング', '臀筋'], secondary: ['背中'] },
-  { name: 'ショルダープレス', part: '肩', repMin: 6, repMax: 10, increment: 2.5, sets: 3, targetRir: 2, primary: ['肩前部'], secondary: ['上腕三頭筋', '肩側部'] },
-  { name: 'ラットプルダウン', part: '背中', repMin: 8, repMax: 12, increment: 2.5, sets: 3, targetRir: 1, primary: ['背中'], secondary: ['上腕二頭筋', '肩後部'] },
-  { name: 'シーテッドロウ', part: '背中', repMin: 8, repMax: 12, increment: 2.5, sets: 3, targetRir: 1, primary: ['背中'], secondary: ['上腕二頭筋', '肩後部'] },
-  { name: 'サイドレイズ', part: '肩', repMin: 10, repMax: 20, increment: 1, sets: 3, targetRir: 0, primary: ['肩側部'], secondary: [] },
-  { name: 'インクラインダンベルカール', part: '腕', repMin: 8, repMax: 15, increment: 1, sets: 3, targetRir: 0, primary: ['上腕二頭筋'], secondary: [] },
-  { name: 'オーバーヘッドエクステンション', part: '腕', repMin: 8, repMax: 15, increment: 1, sets: 3, targetRir: 0, primary: ['上腕三頭筋'], secondary: [] },
-  { name: 'カーフレイズ', part: '脚', repMin: 10, repMax: 20, increment: 2.5, sets: 3, targetRir: 0, primary: ['ふくらはぎ'], secondary: [] },
+  { name: 'ベンチプレス', part: '胸', repMin: 6, repMax: 10, increment: 2.5, sets: 3, targetRir: 2, primary: ['胸'], secondary: ['上腕三頭筋', '肩前部'], equipment: 'barbell' },
+  { name: 'スクワット', part: '脚', repMin: 6, repMax: 10, increment: 2.5, sets: 3, targetRir: 2, primary: ['大腿四頭筋', '臀筋'], secondary: [], equipment: 'barbell' },
+  { name: 'ルーマニアンデッドリフト', part: '脚', repMin: 6, repMax: 10, increment: 2.5, sets: 3, targetRir: 2, primary: ['ハムストリング', '臀筋'], secondary: ['背中'], equipment: 'barbell' },
+  { name: 'ショルダープレス', part: '肩', repMin: 6, repMax: 10, increment: 2.5, sets: 3, targetRir: 2, primary: ['肩前部'], secondary: ['上腕三頭筋', '肩側部'], equipment: 'barbell' },
+  { name: 'ラットプルダウン', part: '背中', repMin: 8, repMax: 12, increment: 2.5, sets: 3, targetRir: 1, primary: ['背中'], secondary: ['上腕二頭筋', '肩後部'], equipment: 'machine' },
+  { name: 'シーテッドロウ', part: '背中', repMin: 8, repMax: 12, increment: 2.5, sets: 3, targetRir: 1, primary: ['背中'], secondary: ['上腕二頭筋', '肩後部'], equipment: 'machine' },
+  { name: 'サイドレイズ', part: '肩', repMin: 10, repMax: 20, increment: 1, sets: 3, targetRir: 0, primary: ['肩側部'], secondary: [], equipment: 'dumbbell' },
+  { name: 'インクラインダンベルカール', part: '腕', repMin: 8, repMax: 15, increment: 1, sets: 3, targetRir: 0, primary: ['上腕二頭筋'], secondary: [], equipment: 'dumbbell' },
+  { name: 'オーバーヘッドエクステンション', part: '腕', repMin: 8, repMax: 15, increment: 1, sets: 3, targetRir: 0, primary: ['上腕三頭筋'], secondary: [], equipment: 'dumbbell' },
+  { name: 'カーフレイズ', part: '脚', repMin: 10, repMax: 20, increment: 2.5, sets: 3, targetRir: 0, primary: ['ふくらはぎ'], secondary: [], equipment: 'machine' },
 ]
 
 export const defaultData = (): AppData => ({

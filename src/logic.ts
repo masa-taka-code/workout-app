@@ -209,10 +209,10 @@ export function planExercise(
     if (adj.note) notes.push(adj.note)
   }
 
-  if (condition === 'bad' && sets > 1) {
-    sets -= 1
-    notes.push('調子が悪いため−1')
-  }
+  // 調子が悪い日も量は変えない（自動で減らす根拠がなく、量が慢性的に不足する恐れがあるため）。注意だけ出す
+  const caution = condition === 'bad'
+    ? '調子が悪い日です。記録更新は狙わず、フォームを崩さない範囲で目標に近づけましょう。痛みがあれば中止してください'
+    : undefined
 
   // 1 回あたりの上限
   const room = Math.min(...ex.primary.map(m => SESSION_CAP - (plannedToday[m] ?? 0)), Infinity)
@@ -221,5 +221,5 @@ export function planExercise(
     notes.push(`1回あたり${SESSION_CAP}セットの上限`)
   }
 
-  return { ...target, sets, reason: [target.reason, ...notes].join('／') }
+  return { ...target, sets, reason: [target.reason, ...notes].join('／'), ...(caution ? { caution } : {}) }
 }

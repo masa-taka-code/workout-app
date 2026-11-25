@@ -4,6 +4,8 @@ interface Props {
   /** 休憩の秒数。リセットしたいときは親が key を変えて作り直す */
   seconds: number
   onSkip: () => void
+  /** 終了時に音を鳴らすか */
+  sound?: boolean
 }
 
 /** 画面下部に固定表示する休憩タイマー */
