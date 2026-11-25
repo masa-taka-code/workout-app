@@ -98,6 +98,11 @@ describe('週ボリューム', () => {
     expect(adjustSetsForVolume(bench, 3, { 胸: 12 }, {}).sets).toBe(3)
   })
 
+  it('先週その筋肉の記録が無い（使い始め・再開）ときは増やさない', () => {
+    expect(adjustSetsForVolume(bench, 3, {}, {}).sets).toBe(3)
+    expect(adjustSetsForVolume(bench, 3, { 胸: 0 }, {}).sets).toBe(3)
+  })
+
   it('達成率80%以上が3週続けば週目標を +1', () => {
     const target = { kind: 'reps' as const, weight: 60, reps: 8, sets: 3, rir: 2, reason: '' }
     const good = (date: string) => session(date, [entry([s(60, 8), s(60, 8), s(60, 8)], target)])

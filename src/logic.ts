@@ -161,7 +161,8 @@ export const weeklyTarget = (targets: AppData['weeklyTargets'], m: Muscle) => ta
 /** 前の週の実績から、今週この種目のセット数を ±1 する */
 export function adjustSetsForVolume(ex: Exercise, sets: number, lastWeek: Volume, targets: AppData['weeklyTargets']): { sets: number; note?: string } {
   if (ex.primary.length === 0) return { sets }
-  const under = ex.primary.filter(m => (lastWeek[m] ?? 0) < weeklyTarget(targets, m))
+  // 先週その筋肉の記録が1つもない（使い始め・久しぶりの再開）ときは増やさない（設計書 2026-11-26 追記）
+  const under = ex.primary.filter(m => (lastWeek[m] ?? 0) > 0 && (lastWeek[m] ?? 0) < weeklyTarget(targets, m))
   const over = ex.primary.filter(m => (lastWeek[m] ?? 0) > WEEKLY_MAX)
   if (over.length > 0 && sets > 1) return { sets: sets - 1, note: `${over.join('・')}は先週${WEEKLY_MAX}セット超のため−1` }
   if (under.length > 0) return { sets: sets + 1, note: `${under.join('・')}は先週目標未満のため+1` }
