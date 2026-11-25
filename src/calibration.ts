@@ -24,7 +24,8 @@ export function rirSamples(exerciseId: string | undefined, data: AppData, before
       if (!target) continue
       for (const set of entry.sets) {
         if (!set.amrap || !set.done || typeof set.rir !== 'number') continue
-        if (set.reps < target.reps) continue
+        // 目標回数に届かずに限界が来たセットも含める（余力を多く見積もった例＝マイナスの誤差）。
+        // 除くと補正値がプラス側にかたよる（論文本文の確認で判明、2026-11-26）
         out.push(set.reps - target.reps - set.rir)
       }
     }

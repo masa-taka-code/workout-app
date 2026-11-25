@@ -23,7 +23,7 @@ describe('rirSamples', () => {
     expect(rirSamples('a', d, '2026-03-01')).toEqual([-1, 1])
   })
 
-  it('対象外を除く（amrap でない・未完了・rir なし・目標未満・target なし・before 以降）', () => {
+  it('対象外を除く（amrap でない・未完了・rir なし・target なし・before 以降）。目標未満は含める', () => {
     const d = data([
       sess('2026-01-01', [
         entry('a', [
@@ -37,7 +37,8 @@ describe('rirSamples', () => {
       ]),
       sess('2026-03-01', [entry('a', [amrapSet(10, 1)])]),
     ])
-    expect(rirSamples('a', d, '2026-03-01')).toEqual([1])
+    // amrapSet(7, 1)：目標8回に届かず限界 → 7 − 8 − 1 = −2（余力を多く見積もった）
+    expect(rirSamples('a', d, '2026-03-01')).toEqual([-2, 1])
   })
 
   it('種目指定なしなら全種目', () => {

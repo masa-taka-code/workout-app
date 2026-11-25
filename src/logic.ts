@@ -7,9 +7,14 @@
 import { isCalibrationDue, rirBias } from './calibration'
 import type { AppData, Condition, Entry, Exercise, Muscle, Session, SetLog, Target } from './types'
 
+/** 週の部分セット数の下限の目安（Schoenfeld 2017：量に比例して増える。Pelland 2024：明確な頭打ちなし） */
 export const WEEKLY_MIN = 10
+/** 週の部分セット数の上限：研究上の上限ではなくアプリの目安（Pelland では 19〜29 セットは効率が低い段階） */
 export const WEEKLY_MAX = 20
-/** 1 回のセッションで 1 つの筋肉に割り当てる部分セットの上限（後半セットの質の低下を防ぐ） */
+/**
+ * 1 回のセッションで 1 つの筋肉に割り当てる部分セットの目安。
+ * Remmert ら 2025（査読前）：約11部分セットを超えると上乗せが見えにくい（著者は「上限ではない」と明記）。安全側に丸めた値
+ */
 export const SESSION_CAP = 10
 export const RAMP_RATE = 0.8
 export const RAMP_WEEKS = 3
@@ -110,6 +115,7 @@ export function suggestTarget(ex: Exercise, history: Entry[], bias = 0): Target 
   const missedTwice = history.length >= 2 && history.slice(0, 2).every(e => achieved(e) === false)
   if (missedTwice) {
     return {
+      // −10%・−1セットは論文の値ではなくアプリの設計値。「停滞時だけ」の方針は Coleman 2024（定期的な休みで筋肥大の上乗せなし）
       ...base, kind: 'deload', sets: Math.max(1, ex.sets - 1), weight: roundTo(topWeight * 0.9, ex.increment), reps: ex.repMin,
       reason: '2回連続で目標未達。今回だけ重量−10%・セット−1で回復を優先',
     }
