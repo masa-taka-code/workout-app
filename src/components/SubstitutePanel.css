@@ -4,3 +4,4 @@
 .substitute-text { display: flex; flex-direction: column; min-width: 0; }
 .substitute-name { font-weight: 600; overflow-wrap: anywhere; }
 .substitute-row .btn { min-height: 44px; flex-shrink: 0; max-width: 45%; }
+.substitute-bare .substitute-row:first-child { border-top: 0; }

@@ -4,6 +4,8 @@ import { formKeyFor } from '../form/engine'
 import FormCheck from './FormCheck'
 
 export interface FormCheckButtonProps {
+  /** true ならチップの中身として「撮影を始める」ボタンだけ出す */
+  bare?: boolean
   ex: Exercise
   entry: Entry
   data: AppData
@@ -13,14 +15,14 @@ export interface FormCheckButtonProps {
   onSaveBaseline: (key: string, baseline: { romDeg: number; minAngle: number; maxAngle: number }) => void
 }
 
-export default function FormCheckButton({ ex, data, onApply, onSaveBaseline }: FormCheckButtonProps) {
+export default function FormCheckButton({ ex, data, onApply, onSaveBaseline, bare }: FormCheckButtonProps) {
   const [open, setOpen] = useState(false)
   const key = formKeyFor(ex)
   if (!key) return null
   return (
     <>
-      <button type="button" className="btn btn-ghost" onClick={() => setOpen(true)}>
-        フォームを撮影（β）
+      <button type="button" className={bare ? 'btn' : 'btn btn-ghost'} onClick={() => setOpen(true)}>
+        {bare ? '撮影を始める' : 'フォームを撮影（β）'}
       </button>
       {open && (
         <FormCheck

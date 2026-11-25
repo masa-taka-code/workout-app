@@ -1,0 +1,40 @@
+.target-wrap { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.target-block {
+  background: var(--accent-weak);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.target-block-deload { background: var(--warn-weak); color: var(--warn-text); }
+.target-label { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.target-block-deload .target-label { color: var(--warn-text); }
+.target-badge {
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--warn-text);
+  font-weight: 600;
+  color: var(--warn-text);
+}
+.target-main { font-size: 24px; font-weight: 700; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.target-first { font-size: 20px; font-weight: 700; line-height: 1.4; }
+.target-nowrap { white-space: nowrap; }
+.target-rir { font-size: 14px; }
+.target-prev { font-size: 12px; color: var(--muted); }
+.target-block-deload .target-prev { color: var(--warn-text); }
+.target-caution-line {
+  color: var(--warn-text);
+  font-size: 14px;
+  border-left: 3px solid var(--warn);
+  padding-left: 8px;
+}
+.target-why summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 14px;
+}
+.target-why p { color: var(--muted); font-size: 14px; padding-bottom: 4px; overflow-wrap: anywhere; }

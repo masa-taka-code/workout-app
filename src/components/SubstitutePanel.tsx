@@ -13,9 +13,11 @@ interface Props {
   entry: Entry
   data: AppData
   onReplace: (next: ReplaceWith) => void
+  /** true なら見出し・ヒントなしで一覧だけ表示する（ヒントは親が表に出す） */
+  bare?: boolean
 }
 
-export default function SubstitutePanel({ ex, entry, data, onReplace }: Props) {
+export default function SubstitutePanel({ ex, entry, data, onReplace, bare }: Props) {
   const hint = useMemo(() => rotationHint(ex, data, localToday()), [ex, data])
   const list = useMemo(() => substitutes(ex, CATALOG, data.exercises), [ex, data.exercises])
 
@@ -25,21 +27,28 @@ export default function SubstitutePanel({ ex, entry, data, onReplace }: Props) {
     onReplace('lengthened' in item ? catalogToExercise(item) : item)
   }
 
+  const rows = (
+    <>
+      {list.length === 0 && <p className="muted">同じ主働筋の種目が見つかりません</p>}
+      {list.map(({ item, reason }) => (
+        <div key={item.name} className="substitute-row">
+          <div className="substitute-text">
+            <span className="substitute-name">{item.name}</span>
+            <span className="muted">{reason}</span>
+          </div>
+          <button type="button" className="btn" onClick={() => replace(item)}>今日はこれに替える</button>
+        </div>
+      ))}
+    </>
+  )
+  if (bare) return <div className="substitute substitute-bare">{rows}</div>
+
   return (
     <div className="substitute">
       {hint && <p className="substitute-hint">{hint.message}</p>}
       <details open={!!hint}>
         <summary>代わりの種目</summary>
-        {list.length === 0 && <p className="muted">同じ主働筋の種目が見つかりません</p>}
-        {list.map(({ item, reason }) => (
-          <div key={item.name} className="substitute-row">
-            <div className="substitute-text">
-              <span className="substitute-name">{item.name}</span>
-              <span className="muted">{reason}</span>
-            </div>
-            <button type="button" className="btn" onClick={() => replace(item)}>今日はこれに替える</button>
-          </div>
-        ))}
+        {rows}
       </details>
     </div>
   )

@@ -10,3 +10,4 @@
 .warmup-list { display: flex; flex-direction: column; gap: 4px; padding-bottom: 8px; }
 .warmup-line { font-size: 0.9rem; overflow-wrap: anywhere; }
 .warmup-work { font-weight: 600; color: var(--text); }
+.warmup-bare .warmup-list { padding-bottom: 0; }

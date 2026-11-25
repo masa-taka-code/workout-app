@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { AppData, Condition, Entry, Exercise, ScreenProps, Session, SetLog } from '../types'
 import { BODY_PARTS } from '../types'
 import { achieved, addVolume, bestE1rm, doneSets, historyFor, localToday, planExercise } from '../logic'
@@ -6,17 +6,27 @@ import type { Volume } from '../logic'
 import { uid } from '../storage'
 import NumInput from '../components/NumInput'
 import RestTimer from '../components/RestTimer'
-import SetNote from '../components/SetNote'
 import WarmupPanel from '../components/WarmupPanel'
 import BodyMap from '../components/BodyMap'
 import FormCheckButton from '../components/FormCheckButton'
 import { exerciseHighlights } from '../bodymap'
-import AmrapHint from '../components/AmrapHint'
 import FeedbackPanel from '../components/FeedbackPanel'
 import SubstitutePanel from '../components/SubstitutePanel'
 import type { ReplaceWith } from '../components/SubstitutePanel'
 import { useWakeLock } from '../hooks/useWakeLock'
 import { primeAudio } from '../sound'
+import { formKeyFor } from '../form/engine'
+import { rotationHint } from '../substitute'
+import TargetBlock from '../components/TargetBlock'
+import ToolChips from '../components/ToolChips'
+import SetRow from '../components/SetRow'
+import OverflowMenu from '../components/OverflowMenu'
+import UndoToast from '../components/UndoToast'
+import {
+  buildNextSet, centeredScrollTop, findScrollTarget, firstUndone, hasWarmup, makeUndo, restoreSession, withoutLastSet,
+} from '../components/todayLogic'
+import type { UndoState } from '../components/todayLogic'
+import './Today.css'
 
 const CONDITIONS: { value: Condition; label: string }[] = [
   { value: 'good', label: '好調' },
@@ -48,6 +58,10 @@ export default function Today({ data, setData }: ScreenProps) {
   const condition: Condition = session?.condition ?? 'normal'
   const [picking, setPicking] = useState(false)
   const [timerRun, setTimerRun] = useState<number | undefined>()  // 休憩開始ごとに増える番号
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())  // 手動で展開したセット（種目id:位置）
+  const [openTool, setOpenTool] = useState<Record<string, string | null>>({})  // 種目ごとに開いている補助機能
+  const [undo, setUndo] = useState<UndoState | null>(null)
+  const [scrollReq, setScrollReq] = useState<{ n: number; exerciseId: string } | null>(null)
 
   /** 今日のセッションを更新（なければ作る） */
   const updateSession = (fn: (s: Session) => Session) =>
@@ -122,11 +136,27 @@ export default function Today({ data, setData }: ScreenProps) {
     if (!wasDone) {
       primeAudio()
       setTimerRun(n => (n ?? 0) + 1)
+      setScrollReq(r => ({ n: (r?.n ?? 0) + 1, exerciseId: ex.id }))
     }
   }
 
+  /** 削除の直前の状態を覚えて、トーストを出す */
+  const announceUndo = (message: string) => {
+    if (session) setUndo(makeUndo(message, session))
+  }
+
+  const removeLastSet = (ex: Exercise, entry: Entry) => {
+    if (entry.sets.length === 0) return
+    const last = entry.sets[entry.sets.length - 1]
+    if (last.done && !confirm(`${entry.sets.length}セット目は完了済みです。削除しますか？`)) return
+    announceUndo(`${entry.sets.length}セット目を削除しました`)
+    updateEntry(ex.id, withoutLastSet)
+  }
+
   const removeEntry = (ex: Exercise) => {
-    if (!confirm(`「${ex.name}」を今日の記録から削除しますか？`)) return
+    const entry = session?.entries.find(e => e.exerciseId === ex.id)
+    if (entry?.sets.some(x => x.done) && !confirm(`「${ex.name}」を今日の記録から削除しますか？`)) return
+    announceUndo(`${ex.name}を外しました`)
     updateSession(s => ({ ...s, entries: s.entries.filter(e => e.exerciseId !== ex.id) }))
   }
 
@@ -138,13 +168,37 @@ export default function Today({ data, setData }: ScreenProps) {
   // トレーニング中（今日の種目がある間）は画面を消さない
   useWakeLock(visible.length > 0)
 
+  const nextSet = buildNextSet(visible, exById)
+
+  // 完了ボタンのあと、次の未完了セットを「見える範囲」の中央へスクロールする
+  useEffect(() => {
+    if (!scrollReq) return
+    const from = visible.findIndex(e => e.exerciseId === scrollReq.exerciseId)
+    const pos = findScrollTarget(visible, from)
+    if (!pos) return
+    const id = `${visible[pos.entryIndex].exerciseId}:${pos.setIndex}`
+    const raf = requestAnimationFrame(() => {
+      const el = Array.from(document.querySelectorAll<HTMLElement>('[data-set-id]')).find(x => x.dataset.setId === id)
+      if (!el) return
+      const raw = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--timer-h'))
+      const timerH = Number.isFinite(raw) ? raw : 140
+      const rect = el.getBoundingClientRect()
+      const top = centeredScrollTop(rect.top, rect.height, window.scrollY, window.innerHeight, 56, timerH)
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      window.scrollTo({ top, behavior: reduce ? 'auto' : 'smooth' })
+    })
+    return () => cancelAnimationFrame(raf)
+    // scrollReq が変わった（完了を押した）ときだけ動かす
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollReq])
+
   return (
     <section className="screen">
       <h1 className="screen-title">{dateLabel()}</h1>
 
       <div className="stack">
         <span className="muted">今日の調子</span>
-        <div className="seg">
+        <div className="seg today-seg">
           {CONDITIONS.map(c => (
             <button
               key={c.value}
@@ -158,7 +212,12 @@ export default function Today({ data, setData }: ScreenProps) {
         </div>
       </div>
 
-      {visible.length === 0 && <p className="empty">＋ 種目を追加 から今日のトレーニングを始めましょう</p>}
+      {visible.length === 0 && !picking && (
+        <div className="empty">
+          <p>今日の種目を選んで始めましょう</p>
+          <button className="btn-add-main" onClick={() => setPicking(true)}>＋ 種目を追加</button>
+        </div>
+      )}
 
       {visible.map(entry => {
         const ex = exById.get(entry.exerciseId)!
@@ -169,122 +228,116 @@ export default function Today({ data, setData }: ScreenProps) {
         const prevBest = Math.max(0, ...last.map(e => bestE1rm(e, ex)))
         const allDone = entry.sets.length > 0 && entry.sets.every(s => s.done)
         const ach = allDone ? achieved(entry) : undefined
+        const activeIdx = firstUndone(entry)
+        const isOpen = (i: number) => i === activeIdx || expanded.has(`${ex.id}:${i}`)
+        const firstOpen = entry.sets.findIndex((_, i) => isOpen(i))
+        const hint = t ? rotationHint(ex, data, today) : undefined
+        const formKey = formKeyFor(ex)
+        const chips = [
+          ...(t && hasWarmup(ex, t) ? [{ key: 'warmup', label: 'アップ' }] : []),
+          { key: 'body', label: '筋肉' },
+          ...(t ? [{ key: 'substitute', label: '代わり' }] : []),
+          ...(formKey ? [{ key: 'form', label: '撮影β' }] : []),
+        ]
+        const toolSaved = openTool[ex.id]
+        const tool = toolSaved === undefined ? (hint ? 'substitute' : null) : toolSaved
+        const panelId = `${ex.id}-${tool}`
         return (
-          <article key={ex.id} className="card">
+          <article key={ex.id} className="card today-card">
             <div className="card-head">
-              <h2 className="card-title">{ex.name}</h2>
-              <button className="btn btn-ghost" onClick={() => removeEntry(ex)}>削除</button>
+              <h2 className="today-title">{ex.name}</h2>
+              <OverflowMenu
+                label={`${ex.name}のメニュー`}
+                items={[
+                  { label: '最後のセットを削除', disabled: entry.sets.length === 0, onSelect: () => removeLastSet(ex, entry) },
+                  { label: 'この種目を外す', danger: true, onSelect: () => removeEntry(ex) },
+                ]}
+              />
             </div>
-            {t && (
-              <>
-                <p className={`target-line${t.kind === 'deload' ? ' target-deload' : ''}`}>
-                  {t.kind === 'first'
-                    ? `目標：${ex.repMin}〜${ex.repMax}回でRIR ${t.rir}の重量を探す`
-                    : `目標 ${num(t.weight)}kg × ${t.reps}回 × ${t.sets}セット（RIR ${t.rir}）`}
-                </p>
-                <p className="muted small">{t.reason}</p>
-                {t.caution && <p className="target-caution">{t.caution}</p>}
-                <WarmupPanel ex={ex} target={t} />
-                <BodyMap highlights={exerciseHighlights(ex)} size="sm" label={`${ex.name}で効く筋肉`} />
-                <FormCheckButton
-                  ex={ex}
-                  entry={entry}
-                  data={data}
-                  onApply={result => applyFormResult(ex, entry, result)}
-                  onSaveBaseline={(key, baseline) =>
-                    setData(prev => ({
-                      ...prev,
-                      formBaselines: { ...prev.formBaselines, [key]: { ...baseline, savedAt: today } },
-                    }))
-                  }
-                />
-                <SubstitutePanel ex={ex} entry={entry} data={data} onReplace={next => replaceExercise(ex, next)} />
-              </>
-            )}
-            {prev && <p className="muted">前回 {prev}</p>}
-
-            {entry.sets.map((s, i) => (
-              <div key={i} className={`set${s.done ? ' done' : ''}`}>
-                <div className="set-main">
-                  <span className="set-no">{i + 1}</span>
-                  <NumInput
-                    mode="decimal"
-                    step={ex.increment}
-                    label={`${i + 1}セット目の重量`}
-                    placeholder="kg"
-                    value={s.weight}
-                    onChange={n => updateSetLog(ex.id, i, { weight: n })}
+            {t && <TargetBlock ex={ex} target={t} previous={prev} />}
+            {!t && prev && <p className="muted">前回 {prev}</p>}
+            {hint && <p className="target-caution-line">{hint.message}</p>}
+            <ToolChips
+              items={chips}
+              openKey={tool}
+              idPrefix={ex.id}
+              onToggle={k => setOpenTool(m => ({ ...m, [ex.id]: tool === k ? null : k }))}
+            />
+            {tool && (
+              <div className="tool-panel" id={panelId}>
+                {tool === 'warmup' && t && <WarmupPanel ex={ex} target={t} bare />}
+                {tool === 'body' && <BodyMap highlights={exerciseHighlights(ex)} size="sm" label={`${ex.name}で効く筋肉`} />}
+                {tool === 'substitute' && (
+                  <SubstitutePanel ex={ex} entry={entry} data={data} bare onReplace={next => replaceExercise(ex, next)} />
+                )}
+                {tool === 'form' && (
+                  <FormCheckButton
+                    ex={ex}
+                    entry={entry}
+                    data={data}
+                    bare
+                    onApply={result => applyFormResult(ex, entry, result)}
+                    onSaveBaseline={(key, baseline) =>
+                      setData(prev => ({
+                        ...prev,
+                        formBaselines: { ...prev.formBaselines, [key]: { ...baseline, savedAt: today } },
+                      }))
+                    }
                   />
-                  <span className="unit">kg ×</span>
-                  <NumInput
-                    mode="numeric"
-                    label={`${i + 1}セット目のレップ`}
-                    placeholder="回"
-                    value={s.reps}
-                    onChange={n => updateSetLog(ex.id, i, { reps: Math.floor(n) })}
-                  />
-                  <span className="unit">回</span>
-                  <button
-                    className="btn set-check"
-                    aria-pressed={s.done}
-                    aria-label={`${i + 1}セット目を完了`}
-                    onClick={() => toggleDone(ex, entry, i)}
-                  >
-                    ✓
-                  </button>
-                </div>
-                <div className="rir" role="group" aria-label={`${i + 1}セット目のRIR`}>
-                  <span>RIR</span>
-                  {[0, 1, 2, 3, 4, 5].map(r => (
-                    <button
-                      key={r}
-                      className="btn"
-                      aria-pressed={s.rir === r}
-                      onClick={() => updateSetLog(ex.id, i, { rir: s.rir === r ? undefined : r })}
-                    >
-                      {r === 5 ? '5+' : r}
-                    </button>
-                  ))}
-                </div>
-                <AmrapHint set={s} target={t} />
-                <SetNote
-                  value={s.note}
-                  label={`${i + 1}セット目のメモ`}
-                  onChange={note => updateSetLog(ex.id, i, { note })}
-                />
+                )}
               </div>
-            ))}
+            )}
 
-            <div className="row">
-              <button
-                className="btn"
-                onClick={() =>
-                  updateEntry(ex.id, e => {
-                    const lastSet = e.sets[e.sets.length - 1]
-                    const copy: SetLog = lastSet
-                      ? { weight: lastSet.weight, reps: lastSet.reps, done: false }
-                      : { weight: e.target?.kind === 'first' ? 0 : (e.target?.weight ?? 0), reps: e.target?.reps ?? ex.repMin, done: false }
-                    return { ...e, sets: [...e.sets, copy] }
-                  })
-                }
-              >
-                セット追加
-              </button>
-              <button
-                className="btn"
-                disabled={entry.sets.length === 0}
-                onClick={() => updateEntry(ex.id, e => ({ ...e, sets: e.sets.slice(0, -1) }))}
-              >
-                最後のセットを削除
-              </button>
+            <div className="today-sets">
+              {entry.sets.map((s, i) => (
+                <div key={i} data-set-id={`${ex.id}:${i}`}>
+                  <SetRow
+                    index={i}
+                    set={s}
+                    target={t}
+                    increment={ex.increment}
+                    active={i === activeIdx}
+                    expanded={expanded.has(`${ex.id}:${i}`)}
+                    showRirHelp={i === firstOpen}
+                    onToggleExpand={() =>
+                      setExpanded(prevSet => {
+                        const next = new Set(prevSet)
+                        const k = `${ex.id}:${i}`
+                        if (next.has(k)) next.delete(k)
+                        else next.add(k)
+                        return next
+                      })
+                    }
+                    onChange={patch => updateSetLog(ex.id, i, patch)}
+                    onToggleDone={() => toggleDone(ex, entry, i)}
+                  />
+                </div>
+              ))}
             </div>
 
-            <div className="row">
-              {ach === true && <span className="badge badge-good">目標達成</span>}
-              {ach === false && <span className="badge badge-warn">未達</span>}
-              {best > 0 && <span className="muted">推定1RM {num(Math.round(best * 10) / 10)}kg</span>}
-              {best > 0 && prevBest > 0 && best > prevBest && <span className="badge badge-good">自己ベスト</span>}
-            </div>
+            <button
+              className="today-add-set"
+              onClick={() =>
+                updateEntry(ex.id, e => {
+                  const lastSet = e.sets[e.sets.length - 1]
+                  const copy: SetLog = lastSet
+                    ? { weight: lastSet.weight, reps: lastSet.reps, done: false }
+                    : { weight: e.target?.kind === 'first' ? 0 : (e.target?.weight ?? 0), reps: e.target?.reps ?? ex.repMin, done: false }
+                  return { ...e, sets: [...e.sets, copy] }
+                })
+              }
+            >
+              ＋ セットを追加
+            </button>
+
+            {(ach !== undefined || best > 0) && (
+              <div className="today-result">
+                {ach === true && <span className="today-badge today-badge-good">目標達成</span>}
+                {ach === false && <span className="today-badge today-badge-warn">未達</span>}
+                {best > 0 && <span className="muted">推定1RM {num(Math.round(best * 10) / 10)}kg</span>}
+                {best > 0 && prevBest > 0 && best > prevBest && <span className="today-pr">★ 自己ベスト</span>}
+              </div>
+            )}
 
             {allDone && (
               <FeedbackPanel ex={ex} entry={entry} onChange={feedback => updateEntry(ex.id, e => ({ ...e, feedback }))} />
@@ -316,7 +369,9 @@ export default function Today({ data, setData }: ScreenProps) {
           })}
         </div>
       ) : (
-        <button className="btn btn-primary" onClick={() => setPicking(true)}>＋ 種目を追加</button>
+        visible.length > 0 && (
+          <button className="btn btn-primary btn-add-bottom" onClick={() => setPicking(true)}>＋ 種目を追加</button>
+        )
       )}
 
       <div className="card">
@@ -328,12 +383,13 @@ export default function Today({ data, setData }: ScreenProps) {
           value={session?.note ?? ''}
           onChange={e => updateSession(s => ({ ...s, note: e.target.value }))}
         />
-        <div className="row">
+        <div className="today-bw">
           <label htmlFor="body-weight">体重</label>
           <NumInput
             mode="decimal"
             step={0.1}
             label="体重 (kg)"
+            className="today-bw-input"
             placeholder="任意"
             value={session?.bodyWeight ?? 0}
             onChange={n => updateSession(s => ({ ...s, bodyWeight: n > 0 ? n : undefined }))}
@@ -343,7 +399,25 @@ export default function Today({ data, setData }: ScreenProps) {
       </div>
 
       {timerRun !== undefined && (
-        <RestTimer key={timerRun} seconds={data.restSeconds} sound={data.sound ?? true} onSkip={() => setTimerRun(undefined)} />
+        <RestTimer
+          key={timerRun}
+          seconds={data.restSeconds}
+          sound={data.sound ?? true}
+          next={nextSet}
+          onSkip={() => setTimerRun(undefined)}
+        />
+      )}
+
+      {undo && (
+        <UndoToast
+          message={undo.message}
+          onUndo={() => {
+            const snap = undo.session
+            setData(prev => restoreSession(prev, snap))
+            setUndo(null)
+          }}
+          onExpire={() => setUndo(null)}
+        />
       )}
     </section>
   )
