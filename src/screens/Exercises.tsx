@@ -111,13 +111,15 @@ export default function Exercises({ data, setData }: ScreenProps) {
             <h2 className="ex-part">{part}</h2>
             {list.map(ex => (
               <button key={ex.id} type="button" className="ex-item" onClick={() => setEditing(ex.id)}>
-                <span className="ex-name">{ex.name}</span>
+                <span className="ex-item-head">
+                  <span className="ex-name">{ex.name}</span>
+                  <span className="ex-count">記録 {recordCount(ex.id)}回</span>
+                </span>
                 <span className="ex-meta">{EQUIPMENTS.find(q => q.value === (ex.equipment ?? 'other'))?.label}・{ex.repMin}〜{ex.repMax}回・+{ex.increment}kg・{ex.sets}セット・RIR {ex.targetRir}</span>
                 <span className="ex-meta">
                   主：{ex.primary.join('・') || 'なし'}
-                  {ex.secondary.length > 0 && `　補助：${ex.secondary.join('・')}`}
+                  {ex.secondary.length > 0 && `／補助：${ex.secondary.join('・')}`}
                 </span>
-                <span className="ex-meta">記録 {recordCount(ex.id)}回</span>
               </button>
             ))}
           </div>

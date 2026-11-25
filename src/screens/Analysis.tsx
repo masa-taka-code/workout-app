@@ -45,6 +45,7 @@ export default function Analysis({ data }: ScreenProps) {
   const today = localToday()
   const colors = {
     accent: cssVar('--accent', '#2563eb'),
+    surface: cssVar('--surface', '#ffffff'),
     border: cssVar('--border', '#d4d4d8'),
     muted: cssVar('--muted', '#71717a'),
   }
@@ -57,6 +58,12 @@ export default function Analysis({ data }: ScreenProps) {
   const [saved, setSaved] = useState<string | null>(loadSaved)
   const exerciseId = exercises.find(e => e.id === saved)?.id ?? exercises[0]?.id
   const series = useMemo(() => (exerciseId ? exerciseSeries(exerciseId, data) : []), [exerciseId, data])
+  // 今日の途中の記録は線に含めず、白抜きの丸で別に描く（急落に見えるのを防ぐ）
+  const chartData = useMemo(
+    () => series.map(p => (p.date === today ? { ...p, past: undefined, todayPt: p.e1rm } : { ...p, past: p.e1rm, todayPt: undefined })),
+    [series, today],
+  )
+  const todayPoint = series.find(p => p.date === today)
   const bests = exerciseId ? personalBests(exerciseId, data) : undefined
   const ach = exerciseId ? exerciseAchievement(exerciseId, data, today) : { achieved: 0, total: 0 }
 
@@ -111,7 +118,7 @@ export default function Analysis({ data }: ScreenProps) {
             </select>
             <div className="chart-box">
               <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={series} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+                <LineChart data={chartData} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
                   <CartesianGrid stroke={colors.border} strokeDasharray="3 3" />
                   <XAxis dataKey="date" tickFormatter={mmdd} {...axis} />
                   <YAxis unit="kg" width={52} domain={['auto', 'auto']} {...axis} />
@@ -121,26 +128,33 @@ export default function Analysis({ data }: ScreenProps) {
                       if (!p) return null
                       return (
                         <div className="chart-tip">
-                          <div>{p.date}</div>
+                          <div>{p.date}{p.date === today && '（今日・途中）'}</div>
                           <div>推定1RM {p.e1rm}kg</div>
                           <div>最大重量 {p.topWeight}kg</div>
                         </div>
                       )
                     }}
                   />
-                  <Line type="monotone" dataKey="e1rm" stroke={colors.accent} strokeWidth={2} dot={{ r: 3, fill: colors.accent, stroke: colors.accent }} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="past" stroke={colors.accent} strokeWidth={2} dot={{ r: 3, fill: colors.accent, stroke: colors.accent }} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="todayPt" stroke="none" dot={{ r: 5, fill: colors.surface, stroke: colors.accent, strokeWidth: 2 }} activeDot={{ r: 5, fill: colors.surface, stroke: colors.accent, strokeWidth: 2 }} isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
+            {todayPoint && (
+              <p className="muted analysis-today">
+                <span className="analysis-today-dot" aria-hidden="true" />
+                今日（途中）：推定1RM {todayPoint.e1rm}kg
+              </p>
+            )}
             {bests && (
               <div className="pb-tiles">
                 <div className="pb-tile">
-                  <div className="pb-label">自己ベスト 推定1RM</div>
+                  <div className="pb-label"><span className="pb-star" aria-hidden="true">★</span> 自己ベスト 推定1RM</div>
                   <div className="pb-value">{bests.e1rm.value}kg</div>
                   <div className="pb-date">{mmdd(bests.e1rm.date)}</div>
                 </div>
                 <div className="pb-tile">
-                  <div className="pb-label">自己ベスト 最大重量</div>
+                  <div className="pb-label"><span className="pb-star" aria-hidden="true">★</span> 自己ベスト 最大重量</div>
                   <div className="pb-value">{bests.weight.value}kg × {bests.weight.reps}</div>
                   <div className="pb-date">{mmdd(bests.weight.date)}</div>
                 </div>

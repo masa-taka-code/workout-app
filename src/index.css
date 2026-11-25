@@ -2,13 +2,23 @@
   --bg: #f5f6f8;
   --surface: #ffffff;
   --text: #1c1e21;
-  --muted: #6b7280;
+  --surface-2: #eef0f3;
+  --muted: #5b6372;
   --border: #d9dce1;
-  --accent: #2563eb;
+  --border-strong: #8a919d;
+  --accent: #1d4ed8;
+  --on-accent: #ffffff;
   --accent-weak: #e3ecfd;
   --good: #15803d;
+  --good-weak: #e7f6ec;
+  --good-text: #166534;
   --warn: #b45309;
+  --warn-weak: #fdf3e1;
+  --warn-text: #92400e;
   --bad: #b91c1c;
+  --pr: #a16207;
+  --tabbar-h: 56px;
+  --shadow-timer: 0 -4px 12px rgb(0 0 0 / 0.08);
   font-family: system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
   line-height: 1.5;
   color-scheme: light dark;
@@ -19,13 +29,22 @@
     --bg: #111317;
     --surface: #1b1e24;
     --text: #e8eaed;
+    --surface-2: #242832;
     --muted: #9aa1ad;
     --border: #343a44;
+    --border-strong: #6b7380;
     --accent: #6ea0ff;
+    --on-accent: #0b1220;
     --accent-weak: #1f2f52;
     --good: #4ade80;
+    --good-weak: #16301f;
+    --good-text: #4ade80;
     --warn: #fbbf24;
+    --warn-weak: #33280f;
+    --warn-text: #fbbf24;
     --bad: #f87171;
+    --pr: #facc15;
+    --shadow-timer: 0 -4px 12px rgb(0 0 0 / 0.4);
   }
 }
 
@@ -51,7 +70,7 @@ button, input, select, textarea {
 .screen {
   max-width: 640px;
   margin: 0 auto;
-  padding: 16px 16px calc(150px + env(safe-area-inset-bottom));
+  padding: 16px 16px calc(var(--tabbar-h) + var(--timer-h, 0px) + 32px + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -84,12 +103,16 @@ button, input, select, textarea {
   background: var(--surface);
   cursor: pointer;
 }
-.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-@media (prefers-color-scheme: dark) { .btn-primary { color: #0b1220; } }
+.btn:active:not(:disabled) { background: var(--surface-2); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+.btn-primary:active:not(:disabled) { background: var(--accent); filter: brightness(0.9); }
 .btn-ghost { background: transparent; border-color: transparent; color: var(--accent); }
 .btn-danger { border-color: var(--bad); color: var(--bad); }
-.btn:disabled { opacity: 0.4; cursor: default; }
+.btn:disabled { color: var(--muted); cursor: default; }
 .btn[aria-pressed='true'] { background: var(--accent-weak); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.btn:focus-visible,
+.tabbar button:focus-visible,
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .badge {
   display: inline-block;
@@ -99,8 +122,9 @@ button, input, select, textarea {
   font-weight: 600;
   border: 1px solid var(--border);
 }
-.badge-good { color: var(--good); border-color: var(--good); }
-.badge-warn { color: var(--warn); border-color: var(--warn); }
+.badge-good { background: var(--good-weak); color: var(--good-text); border-color: var(--good-weak); }
+.badge-warn { background: var(--warn-weak); color: var(--warn-text); border-color: var(--warn-weak); }
+.badge-pr { background: var(--warn-weak); color: var(--pr); border-color: var(--pr); }
 .badge-bad { color: var(--bad); border-color: var(--bad); }
 
 .empty {
@@ -122,14 +146,15 @@ button, input, select, textarea {
 }
 .tabbar button {
   flex: 1;
-  min-height: 56px;
+  min-height: var(--tabbar-h);
   border: 0;
+  border-top: 3px solid transparent;
   background: transparent;
   color: var(--muted);
   font-weight: 600;
   cursor: pointer;
 }
-.tabbar button[aria-current='page'] { color: var(--accent); background: var(--accent-weak); }
+.tabbar button[aria-current='page'] { color: var(--accent); border-top-color: var(--accent); }
 
 input, select, textarea {
   min-height: 44px;
@@ -168,20 +193,3 @@ textarea { width: 100%; resize: vertical; }
 
 .pick-group { font-weight: 700; margin-top: 4px; }
 .pick-list { display: flex; flex-wrap: wrap; gap: 8px; }
-
-.timer {
-  position: fixed;
-  left: 0; right: 0;
-  bottom: calc(56px + env(safe-area-inset-bottom));
-  z-index: 10;
-  max-width: 640px;
-  margin: 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--accent-weak);
-  border-top: 1px solid var(--accent);
-}
-.timer-time { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; flex: 1; }
-.timer-done .timer-time { color: var(--good); }

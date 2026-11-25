@@ -39,3 +39,9 @@
 .ex-cat-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .ex-cat-row .btn { min-height: 44px; flex-shrink: 0; }
 .ex-cat-badge { margin-left: 6px; }
+
+.ex-item-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.ex-count { flex: none; font-size: 12px; font-weight: 600; color: var(--muted); background: var(--surface-2); border-radius: 999px; padding: 2px 8px; font-variant-numeric: tabular-nums; }
+.ex-item:active { background: var(--surface-2); }
+.ex-cat-row .btn { min-width: 56px; }
+.ex-item .ex-meta { font-size: 12px; }

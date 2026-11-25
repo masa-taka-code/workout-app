@@ -3,7 +3,7 @@ import type { PoseLandmarker } from '@mediapipe/tasks-vision'
 import type { Exercise, Muscle } from '../types'
 import type { Baseline, FormExerciseKey, RepResult } from '../form/types'
 import { RepTracker, baselineFrom, setupGuide, summarizeSet } from '../form/engine'
-import { detect, loadPoseLandmarker } from '../form/pose'
+import { detect, loadPoseLandmarker, resetPoseLandmarker } from '../form/pose'
 import { colorForScore, drawSkeleton } from '../form/draw'
 import { exerciseHighlights } from '../bodymap'
 import BodyMap from './BodyMap'
@@ -24,7 +24,7 @@ type Status = 'loading' | 'ready' | ErrorKind
 
 const ERROR_TEXT: Record<ErrorKind, string> = {
   permission: 'カメラの使用が許可されていません。ブラウザの設定で許可してください',
-  model: '解析モデルを読み込めませんでした。初回はインターネット接続が必要です',
+  model: '解析の準備ができませんでした。Wi-Fi などにつないで、もう一度お試しください',
   unsupported: 'この端末・ブラウザでは利用できません',
 }
 
@@ -54,6 +54,7 @@ export default function FormCheck({ ex, formKey, baseline, onApply, onSaveBaseli
   const lastScoreRef = useRef<number | undefined>(undefined)
   const liveRef = useRef<Live>({ visible: true, reps: [] })
 
+  const [attempt, setAttempt] = useState(0)
   const [facing, setFacing] = useState<Facing>('environment')
   const [modelReady, setModelReady] = useState(false)
   const [cameraReady, setCameraReady] = useState(false)
@@ -83,7 +84,7 @@ export default function FormCheck({ ex, formKey, baseline, onApply, onSaveBaseli
         if (!cancelled) setErrorKind(prev => prev ?? 'model')
       })
     return () => { cancelled = true }
-  }, [])
+  }, [attempt])
 
   // カメラの起動（向きが変わるたびに作り直す）
   useEffect(() => {
@@ -117,7 +118,7 @@ export default function FormCheck({ ex, formKey, baseline, onApply, onSaveBaseli
       stream?.getTracks().forEach(t => t.stop())
       if (video) video.srcObject = null
     }
-  }, [facing])
+  }, [facing, attempt])
 
   // 推定ループ
   useEffect(() => {
@@ -160,6 +161,15 @@ export default function FormCheck({ ex, formKey, baseline, onApply, onSaveBaseli
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
   }, [modelReady, cameraReady, facing, tracker])
+
+  /** モデルとカメラをもう一度読み込む */
+  const reload = useCallback(() => {
+    resetPoseLandmarker()
+    setErrorKind(cameraSupported() ? null : 'unsupported')
+    setModelReady(false)
+    setCameraReady(false)
+    setAttempt(n => n + 1)
+  }, [])
 
   const start = useCallback(() => {
     tracker.reset()
@@ -222,7 +232,13 @@ export default function FormCheck({ ex, formKey, baseline, onApply, onSaveBaseli
 
       <div className="fc-body">
         {errorKind ? (
-          <p className="fc-error" role="alert">{ERROR_TEXT[errorKind]}</p>
+          <div className="fc-error" role="alert">
+            <p>{ERROR_TEXT[errorKind]}</p>
+            <div className="fc-error-actions">
+              <button type="button" className="btn btn-primary" onClick={reload}>再読み込み</button>
+              <button type="button" className="btn" onClick={onClose}>閉じる</button>
+            </div>
+          </div>
         ) : (
           <>
             <div className="fc-stage" style={{ aspectRatio: String(aspect) }}>
@@ -344,6 +360,7 @@ export default function FormCheck({ ex, formKey, baseline, onApply, onSaveBaseli
             )}
           </>
         )}
+        <button type="button" className="btn fc-close-bottom" onClick={onClose}>閉じる</button>
       </div>
     </div>
   )

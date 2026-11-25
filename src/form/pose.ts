@@ -22,6 +22,11 @@ export function loadPoseLandmarker(): Promise<PoseLandmarker> {
   return cached
 }
 
+/** キャッシュを捨てて、次回の読み込みをやり直せるようにする */
+export function resetPoseLandmarker(): void {
+  cached = undefined
+}
+
 async function create(): Promise<PoseLandmarker> {
   const { FilesetResolver, PoseLandmarker } = await import('@mediapipe/tasks-vision')
   const fileset = await FilesetResolver.forVisionTasks(WASM_URL)

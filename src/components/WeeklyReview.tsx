@@ -40,11 +40,15 @@ export default function WeeklyReview({ data, today }: Props) {
         </div>
       )}
 
-      {r.prs.map(p => (
-        <p key={p.name} className="wr-pr">
-          自己ベスト更新：{p.name} {p.e1rm}kg（+{Math.round((p.e1rm - p.previous) * 10) / 10}）
-        </p>
-      ))}
+      {r.prs.length > 0 && (
+        <ul className="wr-prs" aria-label="自己ベスト更新">
+          {r.prs.map(p => (
+            <li key={p.name} className="wr-pr">
+              <span className="wr-star" aria-hidden="true">★</span> 自己ベスト更新：{p.name} {p.e1rm}kg（+{Math.round((p.e1rm - p.previous) * 10) / 10}）
+            </li>
+          ))}
+        </ul>
+      )}
 
       <p>
         直近{r.activeWeeks.of}週のうち {r.activeWeeks.count}週 で週2回以上トレーニングできました

@@ -51,6 +51,10 @@
   border: 1px solid var(--bad);
   border-radius: 10px;
 }
+.fc-error p { margin: 0 0 16px; }
+.fc-error-actions { display: flex; gap: 8px; }
+.fc-error-actions .btn { flex: 1; min-height: 44px; }
+.fc-close-bottom { min-height: 56px; width: 100%; flex: none; }
 .fc-controls { display: flex; gap: 8px; }
 .fc-controls .btn { flex: 1; min-height: 44px; }
 .fc-live, .fc-result {

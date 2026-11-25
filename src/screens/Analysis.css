@@ -22,3 +22,7 @@
 .chart-box { width: 100%; min-width: 0; }
 .vol-map { display: flex; flex-direction: column; align-items: center; margin-bottom: 12px; }
 .vol-map .analysis-note { margin-top: 4px; }
+
+.pb-star { color: var(--pr); }
+.analysis-today { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; font-size: 14px; }
+.analysis-today-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); }

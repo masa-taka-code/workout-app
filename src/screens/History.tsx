@@ -95,13 +95,17 @@ export default function History({ data, setData }: ScreenProps) {
                     {cond && <span className={`badge ${cond.cls}`}>{cond.label}</span>}
                     <span className="hist-caret" aria-hidden="true">{isOpen ? '▲' : '▼'}</span>
                   </span>
-                  <span className="muted">
-                    {entries.length}種目・{totalSets}セット・{yen(volume)}kg
-                    {s.bodyWeight ? `・体重 ${num(s.bodyWeight)}kg` : ''}
-                    {hasSetNote && <span className="small">・メモあり</span>}
+                  <span className="hist-names">
+                    {entries.map(e => exById.get(e.exerciseId)?.name ?? '削除された種目').join('・')}
+                  </span>
+                  <span className="hist-sub">
+                    {[
+                      `${totalSets}セット`,
+                      s.bodyWeight ? `体重${num(s.bodyWeight)}kg` : '',
+                      hasSetNote || note ? 'メモあり' : '',
+                    ].filter(Boolean).join('・')}
                   </span>
                 </button>
-                <button className="btn btn-ghost" onClick={() => remove(s)}>削除</button>
               </div>
 
               {isOpen && (
@@ -142,6 +146,8 @@ export default function History({ data, setData }: ScreenProps) {
                     )
                   })}
                   {note && <p className="hist-note muted">{note}</p>}
+                  <p className="hist-total">総挙上量 {yen(volume)}kg</p>
+                  <button type="button" className="btn hist-delete" onClick={() => remove(s)}>削除</button>
                 </div>
               )}
             </article>
