@@ -9,6 +9,7 @@ import RestTimer from '../components/RestTimer'
 import SetNote from '../components/SetNote'
 import WarmupPanel from '../components/WarmupPanel'
 import { useWakeLock } from '../hooks/useWakeLock'
+import { primeAudio } from '../sound'
 
 const CONDITIONS: { value: Condition; label: string }[] = [
   { value: 'good', label: '好調' },
@@ -76,7 +77,10 @@ export default function Today({ data, setData }: ScreenProps) {
   const toggleDone = (ex: Exercise, entry: Entry, i: number) => {
     const wasDone = entry.sets[i].done
     updateSetLog(ex.id, i, { done: !wasDone })
-    if (!wasDone) setTimerRun(n => (n ?? 0) + 1)
+    if (!wasDone) {
+      primeAudio()
+      setTimerRun(n => (n ?? 0) + 1)
+    }
   }
 
   const removeEntry = (ex: Exercise) => {

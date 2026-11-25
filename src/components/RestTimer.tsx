@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { playRestEnd } from '../sound'
 
 interface Props {
   /** 休憩の秒数。リセットしたいときは親が key を変えて作り直す */
@@ -9,7 +10,7 @@ interface Props {
 }
 
 /** 画面下部に固定表示する休憩タイマー */
-export default function RestTimer({ seconds, onSkip }: Props) {
+export default function RestTimer({ seconds, onSkip, sound = true }: Props) {
   const [endAt, setEndAt] = useState(() => Date.now() + seconds * 1000)
   const [now, setNow] = useState(() => Date.now())
   const remaining = Math.max(0, Math.ceil((endAt - now) / 1000))
@@ -23,11 +24,14 @@ export default function RestTimer({ seconds, onSkip }: Props) {
 
   useEffect(() => {
     if (!finished) return
+    if (sound) playRestEnd()
     try {
       navigator.vibrate?.(200)
     } catch {
       /* 振動に対応していない環境では無視 */
     }
+    // sound は終了の瞬間の値だけ使う（変わっても鳴らし直さない）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [finished])
 
   const mm = Math.floor(remaining / 60)

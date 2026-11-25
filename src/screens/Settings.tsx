@@ -5,6 +5,7 @@ import { MUSCLES } from '../types'
 import { WEEKLY_MAX, WEEKLY_MIN, localToday, weeklyTarget } from '../logic'
 import { defaultData } from '../storage'
 import { exportFileName, parseBackup, serialize } from '../backup'
+import { playTest } from '../sound'
 import './Settings.css'
 
 const REST_OPTIONS = [60, 90, 120, 150, 180, 240]
@@ -44,6 +45,9 @@ export default function Settings({ data, setData }: ScreenProps) {
   const [error, setError] = useState<string>()
   const [message, setMessage] = useState<string>()
   const fileRef = useRef<HTMLInputElement>(null)
+
+  const soundOn = data.sound ?? true
+  const setSound = (sound: boolean) => setData(prev => ({ ...prev, sound }))
 
   const setRest = (restSeconds: number) => setData(prev => ({ ...prev, restSeconds }))
 
@@ -147,6 +151,15 @@ export default function Settings({ data, setData }: ScreenProps) {
           ))}
         </div>
         <p className="muted">単関節種目は90秒、多関節種目は2〜3分が目安</p>
+        <div className="set-sound">
+          <span className="set-sound-label">休憩終了の音</span>
+          <div className="seg" role="group" aria-label="休憩終了の音">
+            <button type="button" className="btn" aria-pressed={soundOn} onClick={() => setSound(true)}>オン</button>
+            <button type="button" className="btn" aria-pressed={!soundOn} onClick={() => setSound(false)}>オフ</button>
+          </div>
+          <button type="button" className="btn" onClick={playTest}>音を試す</button>
+        </div>
+        <p className="muted">iPhone では振動しないため、音でお知らせします。マナーモードでは鳴らないことがあります。トレーニング中は画面が自動で消えないようにしています。</p>
       </div>
 
       <div className="card">

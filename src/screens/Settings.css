@@ -9,3 +9,7 @@
 .set-error { color: var(--bad); font-weight: 600; }
 .set-file { display: none; }
 .set-about { font-size: 0.875rem; }
+
+.set-sound { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.set-sound-label { flex: 1 1 100%; font-weight: 600; }
+.set-sound .seg { flex: 1; }
