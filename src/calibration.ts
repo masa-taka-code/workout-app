@@ -5,8 +5,12 @@
  */
 import type { AppData, Entry, Exercise } from './types'
 
+// 以下はアプリの設計値（暫定）。論文の値ではない（設計書「論文本文での確認と修正」）
+/** 補正に使う直近のサンプル数 */
 const RECENT = 5
+/** 補正を始める最小サンプル数 */
 const MIN_SAMPLES = 2
+/** 補正値の範囲（Halperin 2022 の平均的なずれ 約1回を含む幅として設定） */
 const BIAS_MIN = -2
 const BIAS_MAX = 3
 
