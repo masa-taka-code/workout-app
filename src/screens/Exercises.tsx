@@ -91,7 +91,7 @@ export default function Exercises({ data, setData }: ScreenProps) {
                       </span>
                       <span className="ex-meta">主：{item.primary.join('・')}</span>
                     </div>
-                    <button type="button" className="btn" onClick={() => addFromCatalog(item)}>追加</button>
+                    <button type="button" className="btn" aria-label={`${item.name}を追加`} onClick={() => addFromCatalog(item)}>追加</button>
                   </div>
                 ))}
               </div>

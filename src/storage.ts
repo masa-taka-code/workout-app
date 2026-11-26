@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { AppData, Entry, Exercise, Muscle, Session, SetLog } from './types'
 import { MUSCLES } from './types'
 import { WEEKLY_MAX, WEEKLY_MIN } from './logic'
+import { CORRUPT_KEY } from './components/errorBackup'
 import type { BaselineMetric, BaselineStat, FormExerciseKey, PersonalBaseline } from './form/types'
 
 const KEY = 'workout-app:data'
@@ -194,19 +195,44 @@ export function normalizeData(parsed: unknown): AppData | undefined {
   return out
 }
 
-export function loadData(): AppData {
+/** 読み込めなかった保存データを退避できなかったとき true。この間は保存しない（元のデータを守るため） */
+let saveBlocked = false
+
+/** 読み込めなかった生の文字列を退避する。既に退避があれば上書きしない。退避済み（または今回退避できた）なら true */
+function quarantine(raw: string): boolean {
   try {
-    const raw = localStorage.getItem(KEY)
-    if (!raw) return defaultData()
-    return normalizeData(JSON.parse(raw)) ?? defaultData()
+    if (localStorage.getItem(CORRUPT_KEY) === null) localStorage.setItem(CORRUPT_KEY, raw)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function loadData(): AppData {
+  saveBlocked = false
+  let raw: string | null = null
+  try {
+    raw = localStorage.getItem(KEY)
   } catch {
     return defaultData()
   }
+  if (!raw) return defaultData()
+  let parsed: AppData | undefined
+  try {
+    parsed = normalizeData(JSON.parse(raw))
+  } catch {
+    parsed = undefined
+  }
+  if (parsed) return parsed
+  // 空でない文字列が読めなかった：初期データで上書きされる前に退避する。退避できなければ保存自体を止める
+  if (!quarantine(raw)) saveBlocked = true
+  return defaultData()
 }
 
 export function useAppData() {
   const [data, setData] = useState<AppData>(loadData)
   useEffect(() => {
+    if (saveBlocked) return
     try {
       localStorage.setItem(KEY, JSON.stringify(data))
     } catch {

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { defaultData, normalizeData } from './storage'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { defaultData, loadData, normalizeData } from './storage'
 import type { Exercise } from './types'
 
 const base = () => ({ ...defaultData() })
@@ -182,3 +182,42 @@ describe('normalizeData（自分の基準 formBaselines）', () => {
   })
 })
 
+
+describe('loadData（壊れたデータの退避）', () => {
+  const CORRUPT = 'workout-app:data-corrupt'
+  const store = new Map<string, string>()
+  beforeEach(() => {
+    store.clear()
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    })
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('壊れた JSON は退避して初期データを返す', () => {
+    store.set('workout-app:data', '{broken')
+    expect(loadData().sessions).toEqual([])
+    expect(store.get(CORRUPT)).toBe('{broken')
+  })
+  it('version が無いデータも退避する', () => {
+    const raw = JSON.stringify({ exercises: [], sessions: [{ id: 'a', date: '2026-11-20', entries: [] }] })
+    store.set('workout-app:data', raw)
+    loadData()
+    expect(store.get(CORRUPT)).toBe(raw)
+  })
+  it('既に退避があれば上書きしない', () => {
+    store.set(CORRUPT, 'first')
+    store.set('workout-app:data', '{second')
+    loadData()
+    expect(store.get(CORRUPT)).toBe('first')
+  })
+  it('正常なデータ・空のデータでは退避しない', () => {
+    store.set('workout-app:data', JSON.stringify(defaultData()))
+    loadData()
+    store.delete('workout-app:data')
+    loadData()
+    expect(store.has(CORRUPT)).toBe(false)
+  })
+})

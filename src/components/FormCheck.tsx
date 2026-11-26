@@ -715,7 +715,7 @@ export default function FormCheck({
                 </button>
                 <div className="fc-sub-controls">
                   <button type="button" className="btn" onClick={switchCamera}>
-                    カメラ：{facing === 'user' ? '内' : '外'}に切替
+                    {facing === 'user' ? '外カメラに切り替え' : '内カメラに切り替え'}
                   </button>
                   <button type="button" className="btn" disabled={!modelReady} onClick={() => fileInputRef.current?.click()}>
                     動画を選んで解析

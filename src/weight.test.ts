@@ -51,6 +51,9 @@ describe('bodyWeightAlert', () => {
   it('maintain でも通知する', () => {
     expect(bodyWeightAlert(data(losing(), 'maintain'), TODAY)?.kind).toBe('under-eating')
   })
+  it('maintain では「体重を維持するには」の文言にする', () => {
+    expect(bodyWeightAlert(data(losing(), 'maintain'), TODAY)?.message).toBe('体重が3週間で約2.9%減っています。体重を維持するには、食事量が足りていない可能性があります')
+  })
   it("'off' は通知しない", () => {
     expect(bodyWeightAlert(data(losing(), 'off'), TODAY)).toBeUndefined()
   })

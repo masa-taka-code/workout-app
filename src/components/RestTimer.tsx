@@ -153,7 +153,10 @@ export default function RestTimer({ seconds, onSkip, sound = true, next, started
         </div>
         {next ? (
           <>
-            <p className="timer-next">次：{next.exerciseName}　{next.setNo}/{next.totalSets}</p>
+            <p className="timer-next">
+              <span className="timer-next-name">次：{next.exerciseName}</span>
+              <span className="timer-next-count">{next.setNo}/{next.totalSets}</span>
+            </p>
             <p className="timer-target">
               <SetQuantity weight={next.weight} reps={next.reps} />
             </p>

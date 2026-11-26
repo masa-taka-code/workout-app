@@ -153,3 +153,13 @@ export const PRE_ALERT_SECONDS = 10
 /** 残り秒数が予告の秒数ちょうどで、まだ予告していなければ true（開いた時点で10秒以下だったときは鳴らさない） */
 export const shouldPreAlert = (remaining: number, alreadyAlerted: boolean): boolean =>
   remaining === PRE_ALERT_SECONDS && !alreadyAlerted
+
+/**
+ * セット i を完了したとき、同じ種目の未完了の後続セットのうち重量が未入力（0）のものに、完了したセットの重量を入れる（回数は変えない）。
+ * 重量が入っている後続セットと、完了済みのセットは変えない。完了したセットの重量が 0 以下なら何もしない。
+ */
+export function fillWeightAfterComplete(sets: SetLog[], i: number): SetLog[] {
+  const w = sets[i]?.weight ?? 0
+  if (!(w > 0)) return sets
+  return sets.map((s, j) => (j > i && !s.done && !(s.weight > 0) ? { ...s, weight: w } : s))
+}

@@ -89,6 +89,7 @@ export default function App() {
       </ErrorBoundary>
       {deleted && (
         <UndoToast
+          above
           message={deleted.message}
           onUndo={() => {
             const snaps = deleted.sessions

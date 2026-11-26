@@ -23,7 +23,9 @@
 .timer-btn { min-height: 56px; padding: 0 8px; font-size: var(--fs-body); font-weight: 600; flex: none; }
 .timer-btn-add { width: 72px; }
 .timer-btn-skip { width: 88px; }
-.timer-next { font-size: var(--fs-label); line-height: 1.35; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.timer-next { display: flex; align-items: baseline; gap: 8px; max-width: 100%; font-size: var(--fs-label); line-height: 1.35; font-weight: 700; }
+.timer-next-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.timer-next-count { flex: none; font-variant-numeric: tabular-nums; }
 .timer-target { font-size: var(--fs-num-l); line-height: 1.2; font-weight: 700; font-variant-numeric: tabular-nums; }
 
 /* 休憩の最初の30秒：さっきのセットの余力（押さなければ目標 RIR のまま） */

@@ -22,8 +22,9 @@ import ToolChips from '../components/ToolChips'
 import SetRow from '../components/SetRow'
 import OverflowMenu from '../components/OverflowMenu'
 import UndoToast from '../components/UndoToast'
+import CorruptNotice from '../components/CorruptNotice'
 import {
-  buildNextSet, centeredScrollTop, currentSetPos, feedbackComplete, firstUndone, hasWarmup, makeUndo, previousSetText, progressCount,
+  buildNextSet, centeredScrollTop, fillWeightAfterComplete, currentSetPos, feedbackComplete, firstUndone, hasWarmup, makeUndo, previousSetText, progressCount,
   restoreSession, withoutLastSet,
 } from '../components/todayLogic'
 import type { UndoState } from '../components/todayLogic'
@@ -158,7 +159,10 @@ export default function Today({ data, setData }: ScreenProps) {
 
   const toggleDone = (ex: Exercise, entry: Entry, i: number, restStartedAt?: number) => {
     const wasDone = entry.sets[i].done
-    updateSetLog(ex.id, i, { done: !wasDone })
+    updateEntry(ex.id, e => {
+      const sets = e.sets.map((s, j) => (j === i ? { ...s, done: !wasDone } : s))
+      return { ...e, sets: wasDone ? sets : fillWeightAfterComplete(sets, i) }
+    })
     if (!wasDone) {
       primeAudio()
       setTimerStartedAt(restStartedAt)
@@ -277,6 +281,7 @@ export default function Today({ data, setData }: ScreenProps) {
 
   return (
     <section className="screen">
+      <CorruptNotice />
       <div className="today-head">
         <h1 className="screen-title">{dateLabel()}</h1>
         {progress.total > 0 && <span className="today-progress-text">{progress.done} / {progress.total} セット</span>}
@@ -614,6 +619,7 @@ export default function Today({ data, setData }: ScreenProps) {
 
       {undo && (
         <UndoToast
+          reportHeight
           message={undo.message}
           onUndo={() => {
             const snap = undo.session

@@ -83,6 +83,6 @@ export function bodyWeightAlert(data: AppData, today: string): BodyWeightAlert |
   return {
     kind: 'under-eating',
     pctPerWeek,
-    message: `体重が${WEIGHT_TREND_WEEKS}週間で約${round1(totalPct)}%減っています。筋肉を増やすには、食事量が足りていない可能性があります`,
+    message: `体重が${WEIGHT_TREND_WEEKS}週間で約${round1(totalPct)}%減っています。${goal === 'maintain' ? '体重を維持するには' : '筋肉を増やすには'}、食事量が足りていない可能性があります`,
   }
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AppData, Entry, Exercise, Session } from '../types'
 import {
-  buildNextSet, centeredScrollTop, currentSetPos, feedbackComplete, findFirstUndone, hasWarmup, makeUndo, previousSetText, progressCount,
+  buildNextSet, centeredScrollTop, currentSetPos, feedbackComplete, fillWeightAfterComplete, findFirstUndone, hasWarmup, makeUndo, previousSetText, progressCount,
   restoreSession, shouldPreAlert, showRestRir, stepValue, withoutLastSet,
 } from './todayLogic'
 
@@ -172,5 +172,20 @@ describe('休憩中の余力入力・残り10秒の予告', () => {
     expect(shouldPreAlert(11, false)).toBe(false)
     expect(shouldPreAlert(9, false)).toBe(false)
     expect(shouldPreAlert(0, false)).toBe(false)
+  })
+})
+
+describe('fillWeightAfterComplete', () => {
+  it('未入力（0）の後続の未完了セットに重量を入れ、回数は変えない', () => {
+    const sets = [set(true, 40, 8), set(false, 0, 10), set(false, 0, 12)]
+    expect(fillWeightAfterComplete(sets, 0)).toEqual([set(true, 40, 8), set(false, 40, 10), set(false, 40, 12)])
+  })
+  it('重量が入っている後続・完了済み・前のセットは変えない', () => {
+    const sets = [set(false, 0, 8), set(true, 30, 8), set(false, 35, 8), set(false, 0, 8)]
+    expect(fillWeightAfterComplete(sets, 1)).toEqual([set(false, 0, 8), set(true, 30, 8), set(false, 35, 8), set(false, 30, 8)])
+  })
+  it('完了したセットの重量が 0 なら何もしない', () => {
+    const sets = [set(true, 0, 8), set(false, 0, 8)]
+    expect(fillWeightAfterComplete(sets, 0)).toBe(sets)
   })
 })
