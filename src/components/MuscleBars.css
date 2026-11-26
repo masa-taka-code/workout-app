@@ -1,0 +1,20 @@
+.mb-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.mb-row { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.mb-line1 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.mb-name { min-width: 0; font-size: var(--fs-sub); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mb-level { flex: none; font-size: var(--fs-sub); font-weight: 700; }
+.mb-line2 { display: flex; align-items: center; gap: 12px; }
+.mb-track { flex: 1; min-width: 0; height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.mb-fill { height: 100%; border-radius: 999px; }
+.mb-num { flex: none; min-width: 4.5em; text-align: right; font-size: var(--fs-body); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* 段階ごとに色の明るさを変える（達成＝緑、あと少し＝濃い灰、不足＝薄い灰。橙は終わった週の不足だけ） */
+.mb-tone-good { color: var(--good-text); }
+.mb-tone-ink, .mb-tone-muted { color: var(--text); }
+.mb-tone-warn { color: var(--warn-text); }
+.mb-tone-bad { color: var(--bad-text); }
+.mb-fill-good { background: var(--good-solid); }
+.mb-fill-ink { background: var(--muted); }
+.mb-fill-muted { background: var(--control-border); }
+.mb-fill-warn { background: var(--warn); }
+.mb-fill-bad { background: var(--bad); }

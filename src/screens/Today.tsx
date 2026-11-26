@@ -74,6 +74,8 @@ export default function Today({ data, setData }: ScreenProps) {
   // 畳んだ行から「振り返りを入力」だけを開いている種目
   const [feedbackOnly, setFeedbackOnly] = useState<Set<string>>(() => new Set())
   const [condOpen, setCondOpen] = useState(false)  // 調子の3択を開き直しているか
+  // 直前に完了したセット（休憩中の余力入力の対象。画面の中の状態。保存しない）
+  const [lastDone, setLastDone] = useState<{ exerciseId: string; index: number } | undefined>()
 
   /**
    * 今日のセッションを更新（なければ作る）。
@@ -163,6 +165,7 @@ export default function Today({ data, setData }: ScreenProps) {
       setTimerRun(n => (n ?? 0) + 1)
       setScrollReq(r => ({ n: (r?.n ?? 0) + 1 }))
       setFocusId(ex.id)
+      setLastDone({ exerciseId: ex.id, index: i })
       // この完了で種目が終わるなら、振り返りのために開いておく。ほかの種目のセットを完了したら畳む
       setLinger(entry.sets.every((x, j) => j === i || x.done) ? ex.id : undefined)
     }
@@ -210,6 +213,16 @@ export default function Today({ data, setData }: ScreenProps) {
   const pos = currentSetPos(visible, focusId)
   const current = buildNextSet(visible, exById, focusId)
   const progress = progressCount(visible)
+
+  // 休憩中に入れる「さっきのセットの余力」。押した値は直前に完了したセットの rir に入る（同じ値をもう一度押すと未入力に戻る）
+  const lastDoneSet = lastDone ? visible.find(e => e.exerciseId === lastDone.exerciseId)?.sets[lastDone.index] : undefined
+  const restRir =
+    lastDone && lastDoneSet?.done
+      ? {
+          value: lastDoneSet.rir,
+          onPick: (r: number) => updateSetLog(lastDone.exerciseId, lastDone.index, { rir: lastDoneSet.rir === r ? undefined : r }),
+        }
+      : undefined
 
   /** 今のセットを「見える範囲」（上端〜固定バーの上端）の中央へスクロールする */
   const scrollToCurrent = () => {
@@ -585,6 +598,7 @@ export default function Today({ data, setData }: ScreenProps) {
           }
           onComplete={completeCurrent}
           onJump={() => void scrollToCurrent()}
+          restRir={restRir}
           onSkipRest={() => setTimerRun(undefined)}
           // 完了ボタンの押下と同時に呼ばれても、新しく始まった休憩を消さない（終わった休憩のときだけ消す）
           onRestFinishedShown={() => setTimerRun(cur => (cur === timerRun ? undefined : cur))}

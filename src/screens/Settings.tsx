@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
-import type { Muscle, ScreenProps } from '../types'
+import type { AppData, Muscle, ScreenProps } from '../types'
 import { MUSCLES } from '../types'
 import { WEEKLY_MAX, WEEKLY_MIN, localToday, weeklyTarget } from '../logic'
 import { defaultData } from '../storage'
@@ -15,6 +15,14 @@ const STALE_DAYS = 14
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]
 const DAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 const DEFAULT_TIME = '19:00'
+
+/** 体づくりの目的（体重の通知の基準）。保存値は AppData.bodyGoal */
+const BODY_GOALS: { value: NonNullable<AppData['bodyGoal']>; label: string }[] = [
+  { value: 'gain', label: '筋肉を増やす' },
+  { value: 'maintain', label: '維持' },
+  { value: 'cut', label: '減量中' },
+  { value: 'off', label: '通知しない' },
+]
 
 const formatRest = (sec: number) => {
   const m = Math.floor(sec / 60)
@@ -54,6 +62,9 @@ export default function Settings({ data, setData }: ScreenProps) {
   const setSound = (sound: boolean) => setData(prev => ({ ...prev, sound }))
   const formVoiceOn = data.formVoice ?? true
   const setFormVoice = (formVoice: boolean) => setData(prev => ({ ...prev, formVoice }))
+
+  const bodyGoal = data.bodyGoal ?? 'gain'
+  const setBodyGoal = (goal: NonNullable<AppData['bodyGoal']>) => setData(prev => ({ ...prev, bodyGoal: goal }))
 
   const setRest = (restSeconds: number) => setData(prev => ({ ...prev, restSeconds }))
 
@@ -205,14 +216,26 @@ export default function Settings({ data, setData }: ScreenProps) {
         </div>
         <p className="muted">単関節種目は90秒、多関節種目は2〜3分が目安</p>
         <div className="set-sound">
-          <span className="set-sound-label">休憩終了の音</span>
-          <div className="seg" role="group" aria-label="休憩終了の音">
+          <span className="set-sound-label">休憩の音（残り10秒と終了）</span>
+          <div className="seg" role="group" aria-label="休憩の音">
             <button type="button" className="btn" aria-pressed={soundOn} onClick={() => setSound(true)}>オン</button>
             <button type="button" className="btn" aria-pressed={!soundOn} onClick={() => setSound(false)}>オフ</button>
           </div>
           <button type="button" className="btn" onClick={playTest}>音を試す</button>
         </div>
         <p className="muted">iPhone では振動しないため、音でお知らせします。マナーモードでは鳴らないことがあります。トレーニング中は画面が自動で消えないようにしています。</p>
+      </div>
+
+      <div className="card">
+        <h2 className="card-title">体づくりの目的</h2>
+        <div className="set-goals" role="group" aria-label="体づくりの目的">
+          {BODY_GOALS.map(g => (
+            <button key={g.value} type="button" className="btn" aria-pressed={bodyGoal === g.value} onClick={() => setBodyGoal(g.value)}>
+              {g.label}
+            </button>
+          ))}
+        </div>
+        <p className="muted">体重が数週間続けて減っているときにお知らせします</p>
       </div>
 
       <div className="card">
@@ -266,7 +289,11 @@ export default function Settings({ data, setData }: ScreenProps) {
       <div className="card">
         <h2 className="card-title">バックアップ</h2>
         <p className="muted">{lastExport ? `最終バックアップ：${formatDateTime(lastExport)}` : '最終バックアップ：まだありません'}</p>
-        {isStale(lastExport) && <p className="set-warn">バックアップをおすすめします</p>}
+        {isStale(lastExport) && (
+          <p className="set-warn" role="status">
+            <span aria-hidden="true">⚠</span> バックアップをおすすめします
+          </p>
+        )}
         <div className="row">
           <button type="button" className="btn btn-primary" onClick={exportData}>書き出す（JSON）</button>
           <button type="button" className="btn" onClick={() => fileRef.current?.click()}>読み込む</button>

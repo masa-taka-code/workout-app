@@ -68,8 +68,8 @@ export default function Exercises({ data, setData }: ScreenProps) {
 
   return (
     <section className="screen">
-      <div className="ex-head">
-        <h1 className="screen-title">種目</h1>
+      <h1 className="screen-title">種目</h1>
+      <div className="ex-actions">
         <button type="button" className="btn btn-primary" onClick={() => setEditing('new')}>＋ 追加</button>
         <button type="button" className="btn" aria-expanded={browsing} onClick={() => setBrowsing(b => !b)}>カタログから選ぶ</button>
       </div>
@@ -87,7 +87,7 @@ export default function Exercises({ data, setData }: ScreenProps) {
                     <div className="ex-cat-text">
                       <span className="ex-name">
                         {item.name}
-                        {item.lengthened && <span className="badge badge-good ex-cat-badge">伸張位</span>}
+                        {item.lengthened && <span className="badge badge-info ex-cat-badge">伸張位</span>}
                       </span>
                       <span className="ex-meta">主：{item.primary.join('・')}</span>
                     </div>

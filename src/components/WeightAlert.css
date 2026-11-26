@@ -1,0 +1,16 @@
+/* 体重の注意カード：warn 系のトークン。記号と文字で伝える */
+.wt-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--warn-weak);
+  border: 1px solid var(--warn);
+  border-radius: 12px;
+  min-width: 0;
+}
+.wt-alert-head { display: flex; align-items: center; gap: 8px; }
+.wt-alert-icon { flex: none; font-size: var(--fs-label); line-height: 1; color: var(--warn-text); }
+.wt-alert-title { font-size: var(--fs-body); font-weight: 700; color: var(--warn-text); }
+.wt-alert-msg { font-size: var(--fs-body); line-height: 1.5; color: var(--text); overflow-wrap: anywhere; }
+.wt-alert-close { align-self: flex-start; background: transparent; border-color: var(--warn-text); color: var(--warn-text); font-weight: 600; }

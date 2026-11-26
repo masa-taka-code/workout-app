@@ -13,6 +13,8 @@ interface Props {
   onComplete: () => void
   /** バーの文字部分を押したとき（今のセットへスクロール） */
   onJump: () => void
+  /** 休憩中に、直前に完了したセットの余力を入れる（直前のセットがなければ undefined） */
+  restRir?: { value: number | undefined; onPick: (rir: number) => void }
   /** 休憩の「スキップ」 */
   onSkipRest: () => void
   /** 休憩終了の表示を出し終えた */
@@ -26,7 +28,7 @@ interface Props {
  * 作業中（完了ボタン）／休憩中（残り時間と次）／休憩終了（緑）／全部終わった（種目を追加）の4状態。
  * 自分の高さを測って --timer-h に設定する（画面下の余白とトーストの位置に使われる）。
  */
-export default function CurrentSetBar({ current, rest, onComplete, onJump, onSkipRest, onRestFinishedShown, onAddExercise }: Props) {
+export default function CurrentSetBar({ current, rest, onComplete, onJump, restRir, onSkipRest, onRestFinishedShown, onAddExercise }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -58,6 +60,7 @@ export default function CurrentSetBar({ current, rest, onComplete, onJump, onSki
         onSkip={onSkipRest}
         onFinishedShown={onRestFinishedShown}
         onComplete={onComplete}
+        restRir={restRir}
       />
     )
   } else if (current) {

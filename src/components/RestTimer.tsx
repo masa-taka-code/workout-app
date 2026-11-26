@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import './RestTimer.css'
-import { playRestEnd } from '../sound'
+import { playRestEnd, playRestWarn } from '../sound'
 import SetQuantity from './SetQuantity'
+import { PRE_ALERT_SECONDS, shouldPreAlert, showRestRir } from './todayLogic'
 import type { NextSet } from './todayLogic'
 
 export type { NextSet } from './todayLogic'
@@ -20,18 +21,26 @@ interface Props {
   onFinishedShown?: () => void
   /** 休憩終了の表示で出す「✓ 完了」ボタンの動作（次のセットがあるときだけ出す） */
   onComplete?: () => void
+  /** 直前に完了したセットの余力（RIR）を、休憩の最初の30秒だけ入れられるようにする。省略すると出さない */
+  restRir?: {
+    /** いま入っている値（未入力は undefined。押さなければ目標 RIR として記録される） */
+    value: number | undefined
+    onPick: (rir: number) => void
+  }
 }
 
 /** 休憩終了の表示を出しておく時間（ミリ秒） */
 const FINISHED_SHOWN_MS = 3000
 /** 残り時間がこの秒数以下になったら進み具合バーを注意色にする */
-const WARN_SECONDS = 10
+const WARN_SECONDS = PRE_ALERT_SECONDS
 
 /** 固定バー（CurrentSetBar）の中に置く休憩タイマー。休憩中と休憩終了の2状態の表示を持つ */
-export default function RestTimer({ seconds, onSkip, sound = true, next, startedAt, onFinishedShown, onComplete }: Props) {
+export default function RestTimer({ seconds, onSkip, sound = true, next, startedAt, onFinishedShown, onComplete, restRir }: Props) {
   const [endAt, setEndAt] = useState(() => (startedAt ?? Date.now()) + seconds * 1000)
   const [totalMs, setTotalMs] = useState(() => Math.max(1, seconds * 1000))
   const [now, setNow] = useState(() => Date.now())
+  // 余力の入力を出す時間（休憩を始めてから30秒）の起点
+  const [beganAt] = useState(() => startedAt ?? Date.now())
   const remaining = Math.max(0, Math.ceil((endAt - now) / 1000))
   const finished = remaining === 0
 
@@ -52,6 +61,25 @@ export default function RestTimer({ seconds, onSkip, sound = true, next, started
     // sound は終了の瞬間の値だけ使う（変わっても鳴らし直さない）
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [finished])
+
+  // 残り10秒の予告（短い振動と短い音）。音は設定の「音」がオフなら鳴らさない。+30秒で10秒より上に戻ったら、次の10秒でもう一度
+  const warnedRef = useRef(false)
+  useEffect(() => {
+    if (remaining > PRE_ALERT_SECONDS) {
+      warnedRef.current = false
+      return
+    }
+    if (!shouldPreAlert(remaining, warnedRef.current)) return
+    warnedRef.current = true
+    if (sound) playRestWarn()
+    try {
+      navigator.vibrate?.(80)
+    } catch {
+      /* 振動に対応していない環境では無視 */
+    }
+    // sound は予告の瞬間の値だけ使う
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remaining])
 
   // 親が毎回作り直すコールバックで3秒が数え直されないよう、最新のものを ref に持つ
   const shownRef = useRef(onFinishedShown)
@@ -134,6 +162,24 @@ export default function RestTimer({ seconds, onSkip, sound = true, next, started
           <p className="timer-next">次：すべてのセットが完了しました</p>
         )}
       </div>
+      {restRir && showRestRir(now - beganAt) && (
+        <div className="timer-rir" role="group" aria-label="さっきのセットの余力（RIR）">
+          <p className="timer-rir-label">さっきのセットの余力（あと何回できた？）</p>
+          <div className="timer-rir-btns">
+            {[0, 1, 2, 3, 4, 5].map(r => (
+              <button
+                key={r}
+                type="button"
+                className="timer-rir-btn"
+                aria-pressed={restRir.value === r}
+                onClick={() => restRir.onPick(r)}
+              >
+                {r === 5 ? '5+' : r}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

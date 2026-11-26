@@ -45,4 +45,25 @@ describe('sound', () => {
     expect(osc.start).toHaveBeenCalledTimes(3)
     expect(osc.frequency.value).toBe(880)
   })
+
+  it('予告音は1回だけ鳴らし、AudioContext が無くても例外を投げない', async () => {
+    vi.stubGlobal('window', {})
+    const none = await import('./sound')
+    expect(() => none.playRestWarn()).not.toThrow()
+    vi.resetModules()
+    const osc = { type: '', frequency: { value: 0 }, connect: vi.fn(), start: vi.fn(), stop: vi.fn() }
+    const gain = { gain: { setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() }, connect: vi.fn() }
+    class Fake {
+      state = 'running'
+      currentTime = 0
+      destination = {}
+      createOscillator = () => osc
+      createGain = () => gain
+    }
+    vi.stubGlobal('window', { AudioContext: Fake })
+    const { playRestWarn } = await import('./sound')
+    playRestWarn()
+    expect(osc.start).toHaveBeenCalledTimes(1)
+    expect(osc.frequency.value).toBe(660)
+  })
 })

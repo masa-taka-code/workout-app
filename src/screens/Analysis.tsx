@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { WEEKLY_MAX, localToday } from '../logic'
+import { localToday } from '../logic'
 import {
   exerciseAchievement, exerciseSeries, exercisesWithHistory, muscleVolumeThisWeek, personalBests, weeklySummary,
 } from '../stats'
 import type { ScreenProps } from '../types'
 import './Analysis.css'
 import WeeklyReview from '../components/WeeklyReview'
+import WeightAlert from '../components/WeightAlert'
+import MuscleBars from '../components/MuscleBars'
 import BodyMap from '../components/BodyMap'
 import { volumeHighlights } from '../bodymap'
 
@@ -22,8 +24,6 @@ const cssVar = (name: string, fallback: string) => {
 
 /** 2026-11-24 → 11/24 */
 const mmdd = (date: string) => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`
-
-const num = (n: number) => String(Math.round(n * 10) / 10)
 
 function loadSaved(): string | null {
   try {
@@ -49,7 +49,7 @@ export default function Analysis({ data }: ScreenProps) {
     border: cssVar('--border', '#d4d4d8'),
     muted: cssVar('--muted', '#71717a'),
   }
-  const axis = { stroke: colors.border, tick: { fill: colors.muted, fontSize: 12 } }
+  const axis = { stroke: colors.border, tick: { fill: colors.muted, fontSize: 14 } }
 
   const muscles = useMemo(() => muscleVolumeThisWeek(data, today), [data, today])
   const exercises = useMemo(() => exercisesWithHistory(data), [data])
@@ -70,7 +70,9 @@ export default function Analysis({ data }: ScreenProps) {
   const thisWeekRate = weeks[weeks.length - 1]?.rate
 
   return (
-    <section className="screen stack">
+    <section className="screen">
+      <h1 className="screen-title">分析</h1>
+      <WeightAlert data={data} today={today} />
       <WeeklyReview data={data} today={today} />
       <div className="card">
         <h2 className="card-title">今週のボリューム</h2>
@@ -82,16 +84,7 @@ export default function Analysis({ data }: ScreenProps) {
             <BodyMap size="md" highlights={volumeHighlights(muscles)} label="今週のセット数" />
             <p className="muted analysis-note">濃いほど週の目標に近い</p>
           </div>
-          {muscles.map(m => (
-            <div className="vol-row" key={m.muscle}>
-              <span className="vol-name">{m.muscle}</span>
-              <div className="vol-track">
-                <div className={`vol-bar ${m.status}`} style={{ width: `${Math.min(100, (m.volume / WEEKLY_MAX) * 100)}%` }} />
-                <div className="vol-mark" style={{ left: `calc(${Math.min(100, (m.target / WEEKLY_MAX) * 100)}% - 1px)` }} />
-              </div>
-              <span className="vol-num">{num(m.volume)} / {num(m.target)}セット</span>
-            </div>
-          ))}
+          <MuscleBars items={muscles} weekEnded={false} />
           </>
         )}
         <p className="muted analysis-note">

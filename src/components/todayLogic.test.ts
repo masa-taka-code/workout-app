@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { AppData, Entry, Exercise, Session } from '../types'
 import {
   buildNextSet, centeredScrollTop, currentSetPos, feedbackComplete, findFirstUndone, hasWarmup, makeUndo, previousSetText, progressCount,
-  restoreSession, stepValue, withoutLastSet,
+  restoreSession, shouldPreAlert, showRestRir, stepValue, withoutLastSet,
 } from './todayLogic'
 
 const set = (done: boolean, weight = 50, reps = 8) => ({ weight, reps, done })
@@ -155,5 +155,22 @@ describe('undo', () => {
   })
   it('session が無くなっていても足す', () => {
     expect(restoreSession({ ...data, sessions: [] }, session).sessions).toEqual([session])
+  })
+})
+
+describe('休憩中の余力入力・残り10秒の予告', () => {
+  it('休憩の最初の30秒だけ余力を出す', () => {
+    expect(showRestRir(0)).toBe(true)
+    expect(showRestRir(29999)).toBe(true)
+    expect(showRestRir(30000)).toBe(false)
+    expect(showRestRir(-1)).toBe(false)
+  })
+
+  it('残りちょうど10秒で、まだ予告していないときだけ予告する', () => {
+    expect(shouldPreAlert(10, false)).toBe(true)
+    expect(shouldPreAlert(10, true)).toBe(false)
+    expect(shouldPreAlert(11, false)).toBe(false)
+    expect(shouldPreAlert(9, false)).toBe(false)
+    expect(shouldPreAlert(0, false)).toBe(false)
   })
 })

@@ -140,3 +140,16 @@ export const withoutLastSet = (e: Entry): Entry => ({ ...e, sets: e.sets.slice(0
 
 /** セットの文字（完了行・未着手行の表示用） */
 export const setSummary = (s: SetLog): string => `${Math.round(s.weight * 100) / 100}kg × ${s.reps}回`
+
+/** 休憩の最初のこの時間（ミリ秒）だけ、固定バーに「さっきのセットの余力」を出す（設計値・暫定） */
+export const REST_RIR_WINDOW_MS = 30000
+
+/** 休憩を始めてからの経過時間で、余力の入力を出すか */
+export const showRestRir = (elapsedMs: number): boolean => elapsedMs >= 0 && elapsedMs < REST_RIR_WINDOW_MS
+
+/** 休憩の残りがこの秒数になったら予告の振動・音を出す（設計値・暫定） */
+export const PRE_ALERT_SECONDS = 10
+
+/** 残り秒数が予告の秒数ちょうどで、まだ予告していなければ true（開いた時点で10秒以下だったときは鳴らさない） */
+export const shouldPreAlert = (remaining: number, alreadyAlerted: boolean): boolean =>
+  remaining === PRE_ALERT_SECONDS && !alreadyAlerted

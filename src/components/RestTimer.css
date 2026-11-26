@@ -26,6 +26,27 @@
 .timer-next { font-size: var(--fs-label); line-height: 1.35; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .timer-target { font-size: var(--fs-num-l); line-height: 1.2; font-weight: 700; font-variant-numeric: tabular-nums; }
 
+/* 休憩の最初の30秒：さっきのセットの余力（押さなければ目標 RIR のまま） */
+.timer-rir { padding: 0 16px 12px; }
+.timer-rir-label { font-size: var(--fs-sub); line-height: 1.45; font-weight: 600; color: var(--muted); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.timer-rir-btns { display: flex; gap: 6px; }
+.timer-rir-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 52px;
+  padding: 0;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  cursor: pointer;
+}
+.timer-rir-btn:active { background: var(--surface-2); }
+.timer-rir-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.timer-rir-btn[aria-pressed='true'] { background: var(--select-bg); border-color: var(--select-bg); color: var(--on-select); font-weight: 700; }
+.timer-rir-btn[aria-pressed='true']::before { content: '✓'; font-size: var(--fs-sub); margin-right: 1px; }
+
 /* 休憩終了：バー全体を緑で塗る。完了ボタンは同じ位置・同じ青のまま、縁取りで緑と区別する */
 .timer-done {
   background: var(--good-solid);

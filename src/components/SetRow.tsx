@@ -1,4 +1,8 @@
+import { useEffect, useRef } from 'react'
+import type { PointerEvent, ReactNode } from 'react'
 import type { SetLog, Target } from '../types'
+import { createHoldRepeat } from '../holdRepeat'
+import type { HoldRepeat } from '../holdRepeat'
 import NumInput from './NumInput'
 import SetNote from './SetNote'
 import AmrapHint from './AmrapHint'
@@ -27,6 +31,64 @@ interface Props {
   onToggleDone: () => void
 }
 
+/**
+ * −/＋ ボタン。押した瞬間に1回、400ms 押し続けると 100ms ごとに連続して動く。
+ * 指・マウスを離す／ボタンの外へ出る／キャンセル（スクロールなど）／フォーカスが外れると止まる。
+ * キーボード（Enter・Space）は click で1回ずつ動く。
+ */
+function HoldButton({ label, onStep, children }: { label: string; onStep: () => boolean | void; children: ReactNode }) {
+  const stepRef = useRef(onStep)
+  useEffect(() => {
+    stepRef.current = onStep
+  })
+  const holdRef = useRef<HoldRepeat | null>(null)
+  useEffect(() => {
+    const hold = createHoldRepeat(() => stepRef.current())
+    holdRef.current = hold
+    return () => {
+      hold.stop()
+      holdRef.current = null
+    }
+  }, [])
+
+  const stop = () => holdRef.current?.stop()
+  const onPointerDown = (e: PointerEvent<HTMLButtonElement>) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      /* 取れなくても、離したときの pointerup で止まる */
+    }
+    holdRef.current?.start()
+  }
+  const onPointerMove = (e: PointerEvent<HTMLButtonElement>) => {
+    if (!holdRef.current?.running) return
+    const r = e.currentTarget.getBoundingClientRect()
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) stop()
+  }
+
+  return (
+    <button
+      type="button"
+      className="stepper-btn"
+      aria-label={label}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={stop}
+      onPointerCancel={stop}
+      onLostPointerCapture={stop}
+      onBlur={stop}
+      onContextMenu={e => e.preventDefault()}
+      // マウス・タッチの操作は pointerdown で動かし済み。detail が 0 の click だけ（キーボード）をここで動かす
+      onClick={e => {
+        if (e.detail === 0) stepRef.current()
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
 function Stepper({ value, step, mode, label, unit, onChange }: {
   value: number
   step: number
@@ -35,14 +97,27 @@ function Stepper({ value, step, mode, label, unit, onChange }: {
   unit: string
   onChange: (n: number) => void
 }) {
+  // 連続して動かすあいだ、再描画を待たずに最新の値から続ける
+  const valueRef = useRef(value)
+  useEffect(() => {
+    valueRef.current = value
+  }, [value])
+  const move = (delta: number) => () => {
+    const cur = valueRef.current
+    const next = stepValue(cur, delta)
+    if (next === cur) return false  // 下限（0）に着いたら止まる
+    valueRef.current = next
+    onChange(next)
+    return true
+  }
   return (
     <div className="stepper">
-      <button type="button" className="stepper-btn" aria-label={`${label}を減らす`} onClick={() => onChange(stepValue(value, -step))}>−</button>
+      <HoldButton label={`${label}を減らす`} onStep={move(-step)}>−</HoldButton>
       <div className="stepper-field">
         <NumInput mode={mode} step={step} label={label} placeholder="0" value={value} className="stepper-input" onChange={onChange} />
         <span className="stepper-unit" aria-hidden="true">{unit}</span>
       </div>
-      <button type="button" className="stepper-btn" aria-label={`${label}を増やす`} onClick={() => onChange(stepValue(value, step))}>＋</button>
+      <HoldButton label={`${label}を増やす`} onStep={move(step)}>＋</HoldButton>
     </div>
   )
 }

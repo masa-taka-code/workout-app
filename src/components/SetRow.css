@@ -97,6 +97,11 @@
   font-size: var(--fs-num-m);
   line-height: 1;
   cursor: pointer;
+  /* 長押しで連続して動かすので、長押しメニュー・文字選択・ダブルタップ拡大を止める */
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .stepper-btn:active { background: var(--surface-2); }
 .stepper-field { position: relative; flex: 1 1 0; min-width: 0; }

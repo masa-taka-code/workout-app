@@ -1,14 +1,19 @@
 import { useState } from 'react'
 import type { Condition, Entry, ScreenProps, Session } from '../types'
 import { achieved, bestE1rm, doneSets } from '../logic'
+import OverflowMenu from '../components/OverflowMenu'
+import UndoToast from '../components/UndoToast'
+import { isPersonalBest } from '../components/analysisView'
+import { restoreSession } from '../components/todayLogic'
 import './History.css'
 
 const PAGE = 50
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
-const CONDITION_BADGE: Record<Condition, { label: string; cls: string }> = {
-  good: { label: '好調', cls: 'badge-good' },
+/** 調子は文字で出す。不調だけ注意色（warn-text） */
+const CONDITION_TEXT: Record<Condition, { label: string; cls: string }> = {
+  good: { label: '好調', cls: '' },
   normal: { label: '普通', cls: '' },
-  bad: { label: '不調', cls: 'badge-bad' },
+  bad: { label: '不調', cls: 'hist-cond-bad' },
 }
 
 const num = (n: number) => String(Math.round(n * 100) / 100)
@@ -18,6 +23,12 @@ const yen = (n: number) => Math.round(n).toLocaleString('en-US')
 function dateLabel(date: string): string {
   const d = new Date(`${date}T00:00:00`)
   return `${d.getMonth() + 1}月${d.getDate()}日（${WEEKDAYS[d.getDay()]}）`
+}
+
+/** 日付の列に出す「24」と「火」 */
+function dayParts(date: string): { day: number; weekday: string } {
+  const d = new Date(`${date}T00:00:00`)
+  return { day: d.getDate(), weekday: WEEKDAYS[d.getDay()] }
 }
 
 /** 月ごとの見出し「2026年11月」 */
@@ -40,6 +51,8 @@ const hasRecord = (s: Session) =>
 export default function History({ data, setData }: ScreenProps) {
   const [open, setOpen] = useState<Set<string>>(new Set())
   const [limit, setLimit] = useState(PAGE)
+  // 削除した記録を5秒間だけ取り消せるように覚えておく
+  const [deleted, setDeleted] = useState<{ session: Session; message: string } | null>(null)
 
   const exById = new Map(data.exercises.map(e => [e.id, e]))
   const sessions = data.sessions
@@ -55,9 +68,10 @@ export default function History({ data, setData }: ScreenProps) {
       return next
     })
 
+  // 取り消せるので確認ダイアログは出さない（手順を減らす）
   const remove = (s: Session) => {
-    if (!confirm(`${dateLabel(s.date).replace(/（.）$/, '')}の記録を削除しますか？元に戻せません`)) return
     setData(prev => ({ ...prev, sessions: prev.sessions.filter(x => x.id !== s.id) }))
+    setDeleted({ session: s, message: `${dateLabel(s.date).replace(/（.）$/, '')}の記録を削除しました` })
   }
 
   return (
@@ -73,7 +87,12 @@ export default function History({ data, setData }: ScreenProps) {
         const totalSets = entries.reduce((n, e) => n + doneSets(e).length, 0)
         const volume = entries.reduce((n, e) => n + doneSets(e).reduce((v, x) => v + x.weight * x.reps, 0), 0)
         const isOpen = open.has(s.id)
-        const cond = s.condition ? CONDITION_BADGE[s.condition] : undefined
+        const cond = s.condition ? CONDITION_TEXT[s.condition] : undefined
+        const { day, weekday } = dayParts(s.date)
+        const hasPr = entries.some(e => {
+          const ex = exById.get(e.exerciseId)
+          return ex ? isPersonalBest(e, ex, data.sessions, s.date) : false
+        })
         const month = monthLabel(s.date)
         const heading = i === 0 || monthLabel(shown[i - 1].date) !== month ? month : undefined
         const note = (s.note ?? '').trim()
@@ -90,22 +109,29 @@ export default function History({ data, setData }: ScreenProps) {
                   aria-controls={`hist-${s.id}`}
                   onClick={() => toggle(s.id)}
                 >
-                  <span className="hist-title">
-                    {dateLabel(s.date)}
-                    {cond && <span className={`badge ${cond.cls}`}>{cond.label}</span>}
-                    <span className="hist-caret" aria-hidden="true">{isOpen ? '▲' : '▼'}</span>
+                  <span className="hist-date" aria-hidden="true">
+                    <span className="hist-day">{day}</span>
+                    <span className="hist-weekday">{weekday}</span>
                   </span>
-                  <span className="hist-names">
-                    {entries.map(e => exById.get(e.exerciseId)?.name ?? '削除された種目').join('・')}
+                  <span className="sr-only">{dateLabel(s.date)}　</span>
+                  <span className="hist-main">
+                    <span className="hist-names">
+                      {entries.map(e => exById.get(e.exerciseId)?.name ?? '削除された種目').join('・')}
+                    </span>
+                    <span className="hist-sub">
+                      <span>{totalSets}セット</span>
+                      {cond && <span className={cond.cls}>{cond.cls ? '⚠ ' : ''}調子：{cond.label}</span>}
+                      {s.bodyWeight ? <span>体重{num(s.bodyWeight)}kg</span> : null}
+                      {hasSetNote || note ? <span>メモあり</span> : null}
+                      {hasPr && <span className="badge badge-pr">★ 自己ベスト</span>}
+                    </span>
                   </span>
-                  <span className="hist-sub">
-                    {[
-                      `${totalSets}セット`,
-                      s.bodyWeight ? `体重${num(s.bodyWeight)}kg` : '',
-                      hasSetNote || note ? 'メモあり' : '',
-                    ].filter(Boolean).join('・')}
-                  </span>
+                  <span className="hist-caret" aria-hidden="true">{isOpen ? '▾' : '▸'}</span>
                 </button>
+                <OverflowMenu
+                  label={`${dateLabel(s.date)}の記録のメニュー`}
+                  items={[{ label: 'この記録を削除', danger: true, onSelect: () => remove(s) }]}
+                />
               </div>
 
               {isOpen && (
@@ -130,7 +156,7 @@ export default function History({ data, setData }: ScreenProps) {
                           <div className="hist-line muted small">
                             <span>目標 {num(t.weight)}kg × {t.reps}</span>
                             {ach !== undefined && (
-                              <span className={`badge ${ach ? 'badge-good' : 'badge-warn'}`}>{ach ? '達成' : '未達'}</span>
+                              <span className={`badge ${ach ? 'badge-good' : 'hist-miss'}`}>{ach ? '✓ 達成' : `△ 未達（目標 ${t.reps}回）`}</span>
                             )}
                           </div>
                         )}
@@ -141,13 +167,17 @@ export default function History({ data, setData }: ScreenProps) {
                             ))}
                           </ul>
                         )}
-                        {best > 0 && <span className="muted small">推定1RM {num(best)}kg</span>}
+                        {best > 0 && (
+                          <span className="hist-line">
+                            <span className="muted small">推定1RM {num(best)}kg</span>
+                            {ex && isPersonalBest(e, ex, data.sessions, s.date) && <span className="badge badge-pr">★ 自己ベスト</span>}
+                          </span>
+                        )}
                       </div>
                     )
                   })}
                   {note && <p className="hist-note muted">{note}</p>}
                   <p className="hist-total">総挙上量 {yen(volume)}kg</p>
-                  <button type="button" className="btn hist-delete" onClick={() => remove(s)}>削除</button>
                 </div>
               )}
             </article>
@@ -157,6 +187,18 @@ export default function History({ data, setData }: ScreenProps) {
 
       {sessions.length > limit && (
         <button className="btn hist-more" onClick={() => setLimit(n => n + PAGE)}>さらに表示</button>
+      )}
+
+      {deleted && (
+        <UndoToast
+          message={deleted.message}
+          onUndo={() => {
+            const snap = deleted.session
+            setData(prev => restoreSession(prev, snap))
+            setDeleted(null)
+          }}
+          onExpire={() => setDeleted(null)}
+        />
       )}
     </section>
   )

@@ -53,6 +53,28 @@ export function playRestEnd(): void {
   }
 }
 
+/** 残り10秒の予告：660Hz・約0.12秒の短い音を1回 */
+export function playRestWarn(): void {
+  try {
+    const c = getContext()
+    if (!c) return
+    const t = c.currentTime + 0.02
+    const osc = c.createOscillator()
+    const gain = c.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = 660
+    gain.gain.setValueAtTime(0.0001, t)
+    gain.gain.exponentialRampToValueAtTime(0.25, t + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.12)
+    osc.connect(gain)
+    gain.connect(c.destination)
+    osc.start(t)
+    osc.stop(t + 0.13)
+  } catch {
+    /* 鳴らせなくても続行 */
+  }
+}
+
 /** 設定画面のテスト再生 */
 export function playTest(): void {
   primeAudio()
