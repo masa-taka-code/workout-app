@@ -245,6 +245,10 @@ function modeOf<T extends string>(xs: T[], worstFirst: T[]): T {
 /** cap：その崩れの原因の確信度の上限（自分の基準で判定したときだけ。基準のばらつき・誤差が入るため） */
 interface Flag { code: string; magnitude: number; cap?: Confidence }
 
+/** 一般のしきい値（rules.ts の formIssues と同じ値）：bench の最下点の肘がこれより大きいと浅い／curl の伸ばしきりがこれ未満だと不足 */
+const BENCH_SHALLOW_GENERAL_DEG = 100
+const CURL_BOTTOM_GENERAL_DEG = 150
+
 /** 自分の基準で「浅さ・伸びきらない」を判定する崩れ。確信度は mid まで（暫定） */
 const BASELINE_DEPTH_CODES: readonly string[] = ['shallow', 'shallow-hinge', 'partial-bottom', 'partial-top']
 /** v1 の（テンポ・可動域の低下）崩れ。基準の良し悪しを見る belowGeneral には入れない */
@@ -271,6 +275,8 @@ function detectFaults(r: RepResult, ctx: FormContext, personal?: PersonalBaselin
   }
   /** 一般の下限を下回らない（基準が浅いとき、一般の目安より緩くしない） */
   const withFloor = (code: string, lim: number, floor: number) => (below(code) ? Math.max(floor, lim) : lim)
+  /** 一般の上限を超えて緩めない（bench のように、値が大きいほど浅い指標用） */
+  const withCeil = (code: string, lim: number, ceil: number) => (below(code) ? Math.min(ceil, lim) : lim)
   const baselineD = !personal && ctx.baseline && ctx.baseline.romDeg > 0 ? reachOf(r, ctx) : undefined
   const oldBase = personal ? undefined : ctx.baseline
 
@@ -305,7 +311,8 @@ function detectFaults(r: RepResult, ctx: FormContext, personal?: PersonalBaselin
     const ma = stat('minAngle')
     if (ma) {
       // 浅い＝最下点の肘の角度が、基準より余裕以上に大きい（下ろしきれていない）
-      const lim = ma.med + marginOf('minAngle', ma)
+      // 一般の 100° より緩くしない（belowGeneral のとき）
+      const lim = withCeil('shallow', ma.med + marginOf('minAngle', ma), BENCH_SHALLOW_GENERAL_DEG)
       if (r.minAngle > lim) add('shallow', (r.minAngle - lim) / lim, capFor('shallow'))
     }
     else if (baselineD !== undefined) { if (baselineD < REACH_OK) add('shallow', REACH_OK - baselineD) }
@@ -349,7 +356,8 @@ function detectFaults(r: RepResult, ctx: FormContext, personal?: PersonalBaselin
       const et = stat('elbowExtensionTop')
       if (et) {
         // 基準の伸ばしきりより、max(15°, 2×MAD) 以上届いていない
-        const limit = et.med - Math.max(TH.pulldownElbowTopMargin, 2 * et.mad)
+        // 一般の 150° より緩くしない（belowGeneral のとき）
+        const limit = withFloor('partial-top', et.med - Math.max(TH.pulldownElbowTopMargin, 2 * et.mad), TH.pulldownElbowTop)
         if (top < limit) add('partial-top', (limit - top) / limit, capFor('partial-top'))
       } else {
         const limit = oldBase ? oldBase.maxAngle - TH.pulldownElbowTopMargin : TH.pulldownElbowTop
@@ -383,7 +391,8 @@ function detectFaults(r: RepResult, ctx: FormContext, personal?: PersonalBaselin
     // curl：伸ばしきれていない＝最下点の肘の角度（maxAngle）が、基準より余裕以上に小さい
     const ma = stat('maxAngle')
     if (ma) {
-      const lim = ma.med - marginOf('maxAngle', ma)
+      // 一般の 150° より緩くしない（belowGeneral のとき）
+      const lim = withFloor('partial-bottom', ma.med - marginOf('maxAngle', ma), CURL_BOTTOM_GENERAL_DEG)
       if (r.maxAngle < lim) add('partial-bottom', (lim - r.maxAngle) / lim, capFor('partial-bottom'))
     } else if (v1.has('partial-bottom')) add('partial-bottom')
     if (v1.has('partial-top')) add('partial-top')

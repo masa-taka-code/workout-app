@@ -267,6 +267,31 @@ describe('自分の基準を使った崩れの判定', () => {
     expect(faultsOf('pulldown', three({ elbowExtensionTop: 144 }), wide)).toContain('partial-top')
   })
 
+  it('belowGeneral の基準でも、bench・curl・pulldown の浅さは一般のしきい値（100° / 150° / 150°）より甘くならない', () => {
+    // bench：基準 120° なら 128° まで許すが、一般の 100° が上限（大きいほど浅い）
+    const bench = baseline('bench', stats({ minAngle: stat(120) }), { belowGeneral: ['shallow'] })
+    expect(faultsOf('bench', three({}, { minAngle: 105 }), bench)).toContain('shallow')
+    expect(faultsOf('bench', three({}, { minAngle: 98 }), bench)).not.toContain('shallow')
+    expect(faultsOf('bench', three({}, { minAngle: 105 }), baseline('bench', stats({ minAngle: stat(120) })))).not.toContain('shallow')
+    // curl：基準 130° なら 122° まで許すが、一般の 150° を下回れば不足（小さいほど不足）
+    const curl = baseline('curl', stats({ maxAngle: stat(130) }), { belowGeneral: ['partial-bottom'] })
+    expect(faultsOf('curl', three({}, { maxAngle: 145 }), curl)).toContain('partial-bottom')
+    expect(faultsOf('curl', three({}, { maxAngle: 152 }), curl)).not.toContain('partial-bottom')
+    expect(faultsOf('curl', three({}, { maxAngle: 145 }), baseline('curl', stats({ maxAngle: stat(130) })))).not.toContain('partial-bottom')
+    // pulldown：基準 140° なら 125° まで許すが、一般の 150° 未満は不足
+    const pd = baseline('pulldown', stats({ elbowExtensionTop: stat(140) }), { belowGeneral: ['partial-top'] })
+    expect(faultsOf('pulldown', three({ elbowExtensionTop: 145 }), pd)).toContain('partial-top')
+    expect(faultsOf('pulldown', three({ elbowExtensionTop: 152 }), pd)).not.toContain('partial-top')
+    expect(faultsOf('pulldown', three({ elbowExtensionTop: 145 }), baseline('pulldown', stats({ elbowExtensionTop: stat(140) })))).not.toContain('partial-top')
+  })
+
+  it('rdl の shallow-hinge には一般のしきい値が無く（一般の判定では出ない）、belowGeneral にも入らないので、基準どおりに判定する', () => {
+    expect(generalFaultCodes(rep(1, {}, { hipFlexionBottom: 5 }), 'rdl')).not.toContain('shallow-hinge')
+    const b = baseline('rdl', stats({ hipFlexionBottom: stat(80) }), { belowGeneral: ['shallow-hinge'] })
+    expect(faultsOf('rdl', three({ hipFlexionBottom: 71 }), b)).toContain('shallow-hinge')
+    expect(faultsOf('rdl', three({ hipFlexionBottom: 73 }), b)).not.toContain('shallow-hinge')
+  })
+
   it('forward-lean の上限：基準があれば min(基準 + 15°, 80°)、無ければ 72°', () => {
     const lean = (deg: number, b?: PersonalBaseline) => faultsOf('squat', three({ trunkLeanMax: deg }), b).includes('forward-lean')
     // 基準なし
