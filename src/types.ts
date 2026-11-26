@@ -129,6 +129,8 @@ export interface AppData {
   sound?: boolean
   /** トレーニングの予定（曜日と時刻） */
   schedule?: Schedule
+  /** 体づくりの目的：筋肉を増やす／維持／減量中／通知しない（未設定は 'gain' 扱い） */
+  bodyGoal?: 'gain' | 'maintain' | 'cut' | 'off'
   /** 動画フォーム採点の基準（自分の良いフォームの可動域）。種目キーごと */
   formBaselines?: Partial<Record<string, { romDeg: number; minAngle: number; maxAngle: number; trunkLeanMax?: number; savedAt: string }>>
   /** フォーム解析の要約の履歴（新しい順、最大 200 件）。原因判定の手がかりに使う */

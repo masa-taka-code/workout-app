@@ -83,4 +83,12 @@ describe('normalizeData（種目・週目標・セッションid）', () => {
     expect(ids.every(i => typeof i === 'string' && i !== '')).toBe(true)
     expect(new Set(ids).size).toBe(5)
   })
+  it('bodyGoal は4つの値のみ残し、それ以外は undefined にする', () => {
+    for (const g of ['gain', 'maintain', 'cut', 'off'] as const) {
+      expect(normalizeData({ ...base(), bodyGoal: g })?.bodyGoal).toBe(g)
+    }
+    expect(normalizeData({ ...base(), bodyGoal: 'bulk' })?.bodyGoal).toBeUndefined()
+    expect(normalizeData({ ...base(), bodyGoal: 3 })?.bodyGoal).toBeUndefined()
+    expect(normalizeData({ ...base() })?.bodyGoal).toBeUndefined()
+  })
 })

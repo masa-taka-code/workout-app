@@ -113,7 +113,9 @@ export function normalizeData(parsed: unknown): AppData | undefined {
       return id === x.id ? x : { ...x, id }
     })
   const weeklyTargets = normalizeWeeklyTargets(parsed.weeklyTargets)
-  return { ...defaultData(), ...parsed, exercises, sessions, weeklyTargets }
+  // 体づくりの目的は4つの値のみ有効。それ以外は未設定（= gain 扱い）に戻す
+  const bodyGoal = (['gain', 'maintain', 'cut', 'off'] as const).find(g => g === parsed.bodyGoal)
+  return { ...defaultData(), ...parsed, exercises, sessions, weeklyTargets, bodyGoal }
 }
 
 export function loadData(): AppData {
