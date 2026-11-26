@@ -16,7 +16,9 @@ export const WEEKLY_MAX = 20
  * Remmert ら 2025（査読前）：約11部分セットを超えると上乗せが見えにくい（著者は「上限ではない」と明記）。安全側に丸めた値
  */
 export const SESSION_CAP = 10
+/** 週目標の自動 +1 の条件：達成率がこの値以上の週が RAMP_WEEKS 週続く（アプリの設計値・暫定） */
 export const RAMP_RATE = 0.8
+/** 同上の週数（アプリの設計値・暫定） */
 export const RAMP_WEEKS = 3
 
 // ---------- 基本計算 ----------
@@ -91,6 +93,17 @@ export function suggestTarget(ex: Exercise, history: Entry[], bias = 0): Target 
     return { ...base, kind: 'first', weight: 0, reps: ex.repMin, reason: `初回：${ex.repMin}〜${ex.repMax}回でRIR ${ex.targetRir}で止まる重量を探す` }
   }
 
+  // 前回がデロードだったときは、デロード前の重量に戻して下限の回数から再開する（デロードは今回だけ）
+  if (last.target?.kind === 'deload') {
+    const before = history.find(e => e.target?.kind !== 'deload')
+    const maxW = (e: Entry) => Math.max(0, ...doneSets(e).map(x => x.weight))
+    const weight = before ? maxW(before) : roundTo(maxW(last) / 0.9, ex.increment)
+    return {
+      ...base, kind: 'reps', weight, reps: ex.repMin,
+      reason: '回復の回のあと：元の重量に戻し、下限の回数から',
+    }
+  }
+
   // 限界テストのセットは限界まで挙げているので、「目標RIRを残して止めた場合」に換算する
   // （rir 欄は目標回数の時点での予測なので、ここでは使わない）
   const sets = doneSets(last).map(s =>
@@ -104,7 +117,9 @@ export function suggestTarget(ex: Exercise, history: Entry[], bias = 0): Target 
   // 余力 = 記録した RIR − 目標 RIR（最もきつかったセットで判断）
   const surplus = Math.min(...top.map(rirOfBiased)) - ex.targetRir
 
-  if (top.length >= ex.sets && top.every(s => s.reps >= ex.repMax) && surplus >= 0) {
+  // 前回の予定セット数（週ボリュームの調整で標準より少ない週もある）を全部こなしたかで判断する
+  const plannedSets = last.target?.sets ?? ex.sets
+  if (top.length >= plannedSets && top.every(s => s.reps >= ex.repMax) && surplus >= 0) {
     const steps = surplus >= 3 ? 2 : 1
     return {
       ...base, kind: 'increase', weight: roundTo(topWeight + steps * ex.increment, ex.increment), reps: ex.repMin,
@@ -112,7 +127,7 @@ export function suggestTarget(ex: Exercise, history: Entry[], bias = 0): Target 
     }
   }
 
-  const missedTwice = history.length >= 2 && history.slice(0, 2).every(e => achieved(e) === false)
+  const missedTwice = history.length >= 2 && history.slice(0, 2).every(e => achieved(e) === false && e.target?.kind !== 'deload')
   if (missedTwice) {
     return {
       // −10%・−1セットは論文の値ではなくアプリの設計値。「停滞時だけ」の方針は Coleman 2024（定期的な休みで筋肥大の上乗せなし）
@@ -173,14 +188,14 @@ export function adjustSetsForVolume(ex: Exercise, sets: number, lastWeek: Volume
 export function achievementRate(sessions: Session[], from: string, to: string): number | undefined {
   const results = sessions
     .filter(s => s.date >= from && s.date < to)
-    .flatMap(s => s.entries.map(achieved))
+    .flatMap(s => s.entries.filter(e => doneSets(e).length > 0).map(achieved))
     .filter((r): r is boolean => r !== undefined)
   if (results.length === 0) return undefined
   return results.filter(Boolean).length / results.length
 }
 
 /**
- * 直近 RAMP_WEEKS 週の達成率がすべて 80% 以上なら、その週にトレーニングした筋肉の週目標を +1（上限 20）。
+ * 直近 RAMP_WEEKS 週の達成率がすべて 80% 以上なら、先週、主働筋として完了セットがあった筋肉の週目標を +1（上限 20）。
  * 1 週に 1 回、週の初めに呼ぶ想定。
  */
 export function rampWeeklyTargets(data: AppData, today: string): AppData['weeklyTargets'] {
@@ -191,9 +206,18 @@ export function rampWeeklyTargets(data: AppData, today: string): AppData['weekly
     return r !== undefined && r >= RAMP_RATE
   })
   if (!allGood) return data.weeklyTargets
-  const lastWeek = volumeBetween(data.sessions, data.exercises, weeks[0], thisWeek)
+  // 先週、主働筋として完了セットが 1 以上あった筋肉だけ上げる（補助筋だけ・未実施は上げない）
+  const byId = new Map(data.exercises.map(e => [e.id, e]))
+  const trained = new Set<Muscle>()
+  for (const s of data.sessions) {
+    if (s.date < weeks[0] || s.date >= thisWeek) continue
+    for (const en of s.entries) {
+      const ex = byId.get(en.exerciseId)
+      if (ex && doneSets(en).length > 0) for (const m of ex.primary) trained.add(m)
+    }
+  }
   const next = { ...data.weeklyTargets }
-  for (const m of Object.keys(lastWeek) as Muscle[]) {
+  for (const m of trained) {
     next[m] = Math.min(WEEKLY_MAX, weeklyTarget(next, m) + 1)
   }
   return next

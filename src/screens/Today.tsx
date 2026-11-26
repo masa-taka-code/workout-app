@@ -65,13 +65,19 @@ export default function Today({ data, setData }: ScreenProps) {
   const [undo, setUndo] = useState<UndoState | null>(null)
   const [scrollReq, setScrollReq] = useState<{ n: number; exerciseId: string } | null>(null)
 
-  /** 今日のセッションを更新（なければ作る） */
-  const updateSession = (fn: (s: Session) => Session) =>
+  /**
+   * 今日のセッションを更新（なければ作る）。
+   * 編集したら「元に戻す」は無効にする（後の操作まで消えないように）。
+   * 取り消し可能な操作は、更新のあとに announceUndo を呼んでトーストを出す。
+   */
+  const updateSession = (fn: (s: Session) => Session) => {
+    setUndo(null)
     setData(prev => {
       const cur = prev.sessions.find(s => s.date === today)
       if (!cur) return { ...prev, sessions: [...prev.sessions, fn({ id: uid(), date: today, entries: [] })] }
       return { ...prev, sessions: prev.sessions.map(s => (s === cur ? fn(s) : s)) }
     })
+  }
 
   const updateEntry = (exerciseId: string, fn: (e: Entry) => Entry) =>
     updateSession(s => ({ ...s, entries: s.entries.map(e => (e.exerciseId === exerciseId ? fn(e) : e)) }))
@@ -112,6 +118,7 @@ export default function Today({ data, setData }: ScreenProps) {
     }
     const nextData = existing ? data : { ...data, exercises: [...data.exercises, ex] }
     const entry = buildEntry(ex, nextData, from.id)
+    setUndo(null)
     setData(prev => ({
       ...prev,
       exercises: existing ? prev.exercises : [...prev.exercises, ex],
@@ -129,9 +136,9 @@ export default function Today({ data, setData }: ScreenProps) {
       return
     }
     // 反映の取り消しができるよう、反映前の状態を覚えておく（フォームの解析結果そのものは残す）
-    announceUndo(`${ex.name} ${i + 1}セット目に反映しました`)
     updateSetLog(ex.id, i, { reps: result.reps, formScore: result.formScore })
     toggleDone(ex, entry, i, result.endedAt)
+    announceUndo(`${ex.name} ${i + 1}セット目に反映しました`)  // 編集のあとに出す（編集で消えるため）
   }
 
   const toggleDone = (ex: Exercise, entry: Entry, i: number, restStartedAt?: number) => {
@@ -154,15 +161,15 @@ export default function Today({ data, setData }: ScreenProps) {
     if (entry.sets.length === 0) return
     const last = entry.sets[entry.sets.length - 1]
     if (last.done && !confirm(`${entry.sets.length}セット目は完了済みです。削除しますか？`)) return
-    announceUndo(`${entry.sets.length}セット目を削除しました`)
     updateEntry(ex.id, withoutLastSet)
+    announceUndo(`${entry.sets.length}セット目を削除しました`)
   }
 
   const removeEntry = (ex: Exercise) => {
     const entry = session?.entries.find(e => e.exerciseId === ex.id)
     if (entry?.sets.some(x => x.done) && !confirm(`「${ex.name}」を今日の記録から削除しますか？`)) return
-    announceUndo(`${ex.name}を外しました`)
     updateSession(s => ({ ...s, entries: s.entries.filter(e => e.exerciseId !== ex.id) }))
+    announceUndo(`${ex.name}を外しました`)
   }
 
   const addedIds = new Set((session?.entries ?? []).map(e => e.exerciseId))

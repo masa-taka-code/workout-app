@@ -23,6 +23,10 @@ export function feedbackDelta(feedbacks: Feedback[]): Delta | undefined {
   return 0
 }
 
+/** 値が1つでもある振り返りか（空の `{}` は振り返りなし扱い） */
+const hasFeedbackValue = (f: Feedback): boolean =>
+  f.pump !== undefined || f.workload !== undefined || f.soreness !== undefined || f.joint !== undefined
+
 /** [from, to) の振り返りを、種目の主働筋ごとに集める（削除済みの種目は無視） */
 export function feedbackByMuscle(data: AppData, from: string, to: string): Partial<Record<Muscle, Feedback[]>> {
   const byId = new Map(data.exercises.map(e => [e.id, e]))
@@ -31,7 +35,7 @@ export function feedbackByMuscle(data: AppData, from: string, to: string): Parti
     if (s.date < from || s.date >= to) continue
     for (const en of s.entries) {
       const ex = byId.get(en.exerciseId)
-      if (!ex || !en.feedback) continue
+      if (!ex || !en.feedback || !hasFeedbackValue(en.feedback)) continue
       for (const m of ex.primary) (out[m] ??= []).push(en.feedback)
     }
   }

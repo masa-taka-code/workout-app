@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  achieved, adjustSetsForVolume, e1rm, planExercise, rampWeeklyTargets, roundTo, suggestTarget, volumeBetween, weekStart,
+  achieved, achievementRate, adjustSetsForVolume, e1rm, planExercise, rampWeeklyTargets, roundTo, suggestTarget, volumeBetween, weekStart,
 } from './logic'
 import type { AppData, Entry, Exercise, Session, SetLog } from './types'
 
@@ -86,6 +86,51 @@ describe('種目ごとの目標', () => {
   })
 })
 
+describe('増量の判定（予定セット数）', () => {
+  it('前回の予定が2セットなら、2セットとも上限回数・目標RIR以上で増量する', () => {
+    const target = { kind: 'reps' as const, weight: 60, reps: 10, sets: 2, rir: 2, reason: '' }
+    const t = suggestTarget(bench, [entry([s(60, 10, 2), s(60, 10, 2)], target)])
+    expect(t).toMatchObject({ kind: 'increase', weight: 62.5 })
+  })
+  it('予定が標準（3セット）なら、2セットだけでは増量しない', () => {
+    const t = suggestTarget(bench, [entry([s(60, 10, 2), s(60, 10, 2)])])
+    expect(t.kind).toBe('reps')
+  })
+})
+
+describe('デロードは今回だけ', () => {
+  const dl = { kind: 'deload' as const, weight: 55, reps: 6, sets: 2, rir: 2, reason: '' }
+  const miss = { kind: 'reps' as const, weight: 60, reps: 9, sets: 3, rir: 2, reason: '' }
+  const missed = () => entry([s(60, 8, 1), s(60, 7, 0), s(60, 6, 0)], miss)
+
+  it('デロードの次は、デロード前の最大重量に戻して下限の回数から', () => {
+    const deload = entry([s(55, 6, 2), s(55, 6, 2)], dl)
+    const t = suggestTarget(bench, [deload, missed(), missed()])
+    expect(t).toMatchObject({ kind: 'reps', weight: 60, reps: 6, sets: 3 })
+    expect(t.reason).toContain('回復の回のあと')
+  })
+  it('デロード前の記録が無ければ、前回の重量 ÷ 0.9 を刻みに丸める', () => {
+    const deload = entry([s(55, 6, 2), s(55, 6, 2)], dl)
+    expect(suggestTarget(bench, [deload])).toMatchObject({ kind: 'reps', weight: 60, reps: 6 })
+  })
+  it('デロードの直後にまた未達でも、再デロードしない', () => {
+    const deload = entry([s(55, 5, 0), s(55, 5, 0)], dl)
+    // 直近2件: デロード（未達）→ 未達。デロードが挟まるので missedTwice にならない
+    const t = suggestTarget(bench, [missed(), deload, missed()])
+    expect(t.kind).not.toBe('deload')
+  })
+})
+
+describe('達成率（未着手の種目）', () => {
+  it('完了セットが1つも無い記録は数えない', () => {
+    const target = { kind: 'reps' as const, weight: 60, reps: 8, sets: 3, rir: 2, reason: '' }
+    const idle = entry([{ weight: 60, reps: 8, done: false }], target)
+    const good = entry([s(60, 8), s(60, 8), s(60, 8)], target)
+    expect(achievementRate([session('2026-11-17', [idle, good])], '2026-11-16', '2026-11-23')).toBe(1)
+    expect(achievementRate([session('2026-11-17', [idle])], '2026-11-16', '2026-11-23')).toBeUndefined()
+  })
+})
+
 describe('週ボリューム', () => {
   it('主働筋1・補助筋0.5で数える', () => {
     const vol = volumeBetween([session('2026-11-23', [entry([s(60, 8), s(60, 8), s(60, 8)])])], [bench], '2026-11-23', '2026-11-30')
@@ -108,6 +153,28 @@ describe('週ボリューム', () => {
     const good = (date: string) => session(date, [entry([s(60, 8), s(60, 8), s(60, 8)], target)])
     const d = data([good('2026-11-02'), good('2026-11-09'), good('2026-11-16')])
     expect(rampWeeklyTargets(d, '2026-11-24')).toMatchObject({ 胸: 11 })
+  })
+})
+
+describe('週目標の引き上げ対象', () => {
+  const target = { kind: 'reps' as const, weight: 60, reps: 8, sets: 3, rir: 2, reason: '' }
+  const row: Exercise = { ...bench, id: 'row', name: 'ロウ', part: '背中', primary: ['背中'], secondary: ['上腕二頭筋'] }
+  const rowEntry = (sets: SetLog[]): Entry => ({ exerciseId: 'row', sets, target })
+  const good = (date: string) => session(date, [entry([s(60, 8), s(60, 8), s(60, 8)], target)])
+
+  it('先週に主働筋として完了セットがあった筋肉だけ +1（補助筋だけ・未実施は上げない）', () => {
+    const d: AppData = {
+      ...data([good('2026-11-02'), good('2026-11-09'), session('2026-11-16', [
+        entry([s(60, 8), s(60, 8), s(60, 8)], target),
+        rowEntry([{ weight: 40, reps: 10, done: false }]), // 未完了 → 背中は上げない
+      ])]),
+      exercises: [bench, row],
+    }
+    const r = rampWeeklyTargets(d, '2026-11-24')
+    expect(r.胸).toBe(11)
+    expect(r.背中).toBeUndefined()
+    expect(r.上腕三頭筋).toBeUndefined() // 補助筋だけ
+    expect(r.肩前部).toBeUndefined()
   })
 })
 

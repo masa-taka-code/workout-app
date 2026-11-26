@@ -68,7 +68,7 @@ export function exerciseAchievement(exerciseId: string, data: AppData, today?: s
   for (const s of data.sessions) {
     if (s.date === today) continue
     for (const en of s.entries) {
-      if (en.exerciseId !== exerciseId) continue
+      if (en.exerciseId !== exerciseId || doneSets(en).length === 0) continue
       const r = achieved(en)
       if (r === undefined) continue
       total++

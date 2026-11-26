@@ -84,6 +84,21 @@ describe('nextWeeklyTargets', () => {
   })
 })
 
+describe('空の振り返り', () => {
+  it('値が1つも無い振り返りは集めない', () => {
+    const d = mk([sess('2026-11-17', {}), sess('2026-11-18', { pump: undefined })])
+    expect(feedbackByMuscle(d, '2026-11-16', '2026-11-23')).toEqual({})
+  })
+  it('空の振り返りで達成率ルールの +1 を打ち消さない', () => {
+    const target = { kind: 'reps' as const, weight: 60, reps: 8, sets: 1, rir: 2, reason: '' }
+    const good = (date: string, feedback?: Feedback): Session => ({
+      id: date, date, entries: [{ exerciseId: 'bench', sets, target, feedback }],
+    })
+    const d = mk([good('2026-11-02'), good('2026-11-09'), good('2026-11-17', {})])
+    expect(nextWeeklyTargets(d, TODAY).胸).toBe(11)
+  })
+})
+
 describe('explainDelta', () => {
   it('理由の文', () => {
     expect(explainDelta(-1, [{ joint: true }])).toBe('関節の痛みがあったため−1')

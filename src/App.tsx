@@ -34,14 +34,22 @@ export default function App() {
   const [data, setData] = useAppData()
   const [tab, setTab] = useState<Tab>(loadTab)
 
-  // 週が変わっていたら、週目標を1回だけ見直す
+  // 週が変わっていたら、週目標を1回だけ見直す（起動時と、アプリを開いたまま週をまたいで表示に戻ったとき）
   useEffect(() => {
-    const today = localToday()
-    setData(prev =>
-      weekStart(today) === prev.lastRampWeek
-        ? prev
-        : { ...prev, weeklyTargets: nextWeeklyTargets(prev, today), lastRampWeek: weekStart(today) },
-    )
+    const review = () => {
+      const today = localToday()
+      setData(prev =>
+        weekStart(today) === prev.lastRampWeek
+          ? prev
+          : { ...prev, weeklyTargets: nextWeeklyTargets(prev, today), lastRampWeek: weekStart(today) },
+      )
+    }
+    review()
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') review()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
   }, [setData])
 
   const select = (t: Tab) => {
