@@ -1,0 +1,4 @@
+.qty { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.qty-u { font-size: 0.65em; }
+.qty-x { margin: 0 0.35em; }
+.qty-undecided { font-size: 0.65em; }

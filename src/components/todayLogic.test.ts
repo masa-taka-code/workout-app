@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { AppData, Entry, Exercise, Session } from '../types'
 import {
-  buildNextSet, centeredScrollTop, findFirstUndone, findScrollTarget, hasWarmup, makeUndo, restoreSession, stepValue, withoutLastSet,
+  buildNextSet, centeredScrollTop, currentSetPos, feedbackComplete, findFirstUndone, hasWarmup, makeUndo, previousSetText, progressCount,
+  restoreSession, stepValue, withoutLastSet,
 } from './todayLogic'
 
 const set = (done: boolean, weight = 50, reps = 8) => ({ weight, reps, done })
@@ -21,16 +22,67 @@ describe('findFirstUndone', () => {
   })
 })
 
-describe('findScrollTarget', () => {
-  const entries = [entry('a', [true, false]), entry('b', [false]), entry('c', [true])]
-  it('同じ種目に未完了があればそこ', () => {
-    expect(findScrollTarget(entries, 0)).toEqual({ entryIndex: 0, setIndex: 1 })
+describe('currentSetPos', () => {
+  it('ベンチ途中でラット1セット目を完了したら、次はラット2セット目（タイマーの次も同じ）', () => {
+    const entries = [entry('bench', [true, true, true, false]), entry('row', [true, false])]
+    expect(currentSetPos(entries, 'row')).toEqual({ entryIndex: 1, setIndex: 1 })
+    const byId = new Map([['bench', ex('bench', 'ベンチプレス')], ['row', ex('row', 'ラットプルダウン')]])
+    expect(buildNextSet(entries, byId, 'row')).toMatchObject({ exerciseName: 'ラットプルダウン', setNo: 2, totalSets: 2 })
+    // 画面の focus を使わない旧判定（一覧順の最初）だとベンチ4セット目になる
+    expect(buildNextSet(entries, byId)).toMatchObject({ exerciseName: 'ベンチプレス', setNo: 4 })
   })
-  it('同じ種目が終わっていれば次の種目', () => {
-    expect(findScrollTarget([entry('a', [true]), entry('b', [false])], 0)).toEqual({ entryIndex: 1, setIndex: 0 })
+  it('focus の種目が全部終わったら、後ろの種目へ進む', () => {
+    const entries = [entry('a', [false]), entry('b', [true, true]), entry('c', [true, false])]
+    expect(currentSetPos(entries, 'b')).toEqual({ entryIndex: 2, setIndex: 1 })
   })
-  it('全部完了なら undefined', () => {
-    expect(findScrollTarget([entry('a', [true]), entry('b', [true])], 0)).toBeUndefined()
+  it('後ろが全部終わっていたら、前の種目の未完了へ戻る', () => {
+    const entries = [entry('a', [true, false, false]), entry('b', [true]), entry('c', [true])]
+    expect(currentSetPos(entries, 'c')).toEqual({ entryIndex: 0, setIndex: 1 })
+  })
+  it('focus が未設定・一覧にないときは一覧順の最初の未完了', () => {
+    const entries = [entry('a', [true]), entry('b', [false, false]), entry('c', [false])]
+    expect(currentSetPos(entries, undefined)).toEqual({ entryIndex: 1, setIndex: 0 })
+    expect(currentSetPos(entries, 'zzz')).toEqual({ entryIndex: 1, setIndex: 0 })
+  })
+  it('focus の種目の最初の未完了セットを返す（途中のセットが抜けていても最初のもの）', () => {
+    expect(currentSetPos([entry('a', [false]), entry('b', [true, false, false])], 'b')).toEqual({ entryIndex: 1, setIndex: 1 })
+  })
+  it('削除済みの種目（isVisible が false）は飛ばす', () => {
+    const entries = [entry('a', [false]), entry('b', [false]), entry('c', [false])]
+    expect(currentSetPos(entries, 'b', e => e.exerciseId !== 'b')).toEqual({ entryIndex: 2, setIndex: 0 })
+    expect(currentSetPos(entries, undefined, e => e.exerciseId === 'c')).toEqual({ entryIndex: 2, setIndex: 0 })
+  })
+  it('すべて完了なら undefined', () => {
+    expect(currentSetPos([entry('a', [true]), entry('b', [true])], 'a')).toBeUndefined()
+    expect(currentSetPos([], 'a')).toBeUndefined()
+  })
+})
+
+describe('progressCount', () => {
+  it('完了数と全セット数', () => {
+    expect(progressCount([entry('a', [true, false]), entry('b', [true, true, false])])).toEqual({ done: 3, total: 5 })
+    expect(progressCount([])).toEqual({ done: 0, total: 0 })
+  })
+})
+
+describe('previousSetText', () => {
+  const prev: Entry = { exerciseId: 'a', sets: [set(true, 60, 10), set(true, 57.5, 9), set(false, 55, 8)] }
+  it('前回の同じ番号の完了セット', () => {
+    expect(previousSetText(prev, 0)).toBe('60×10')
+    expect(previousSetText(prev, 1)).toBe('57.5×9')
+  })
+  it('前回がない・同じ番号がない・未完了なら undefined', () => {
+    expect(previousSetText(undefined, 0)).toBeUndefined()
+    expect(previousSetText(prev, 3)).toBeUndefined()
+    expect(previousSetText(prev, 2)).toBeUndefined()
+  })
+})
+
+describe('feedbackComplete', () => {
+  it('4項目がそろったときだけ true', () => {
+    expect(feedbackComplete(undefined)).toBe(false)
+    expect(feedbackComplete({ pump: 1, workload: 1, soreness: 0 })).toBe(false)
+    expect(feedbackComplete({ pump: 0, workload: 0, soreness: 0, joint: false })).toBe(true)
   })
 })
 
@@ -96,6 +148,10 @@ describe('undo', () => {
     const back = restoreSession(removed, undo.session)
     expect(back.sessions[0]).toBe(session)
     expect(back.sessions).toHaveLength(2)
+  })
+  it('完了の取り消しは休憩タイマーも止める印を持つ', () => {
+    expect(makeUndo('x', session).stopTimer).toBe(false)
+    expect(makeUndo('x', session, true).stopTimer).toBe(true)
   })
   it('session が無くなっていても足す', () => {
     expect(restoreSession({ ...data, sessions: [] }, session).sessions).toEqual([session])

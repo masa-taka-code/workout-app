@@ -1,4 +1,5 @@
 import type { Entry, Exercise, Feedback } from '../types'
+import { feedbackComplete } from './todayLogic'
 import './FeedbackPanel.css'
 
 interface Props {
@@ -17,7 +18,7 @@ const SCALES: { key: ScaleKey; label: string; options: [string, string, string] 
 
 export default function FeedbackPanel({ entry, onChange }: Props) {
   const fb: Feedback = entry.feedback ?? {}
-  const complete = fb.pump !== undefined && fb.workload !== undefined && fb.soreness !== undefined && fb.joint !== undefined
+  const complete = feedbackComplete(fb)
 
   const setScale = (key: ScaleKey, value: 0 | 1 | 2) =>
     onChange({ ...entry.feedback, [key]: fb[key] === value ? undefined : value })
@@ -53,7 +54,7 @@ export default function FeedbackPanel({ entry, onChange }: Props) {
         </div>
       </div>
       {fb.joint === true && <div className="feedback-warn small">痛みが続く場合は種目の入れ替えを検討してください</div>}
-      {complete && <div className="small muted">記録しました</div>}
+      {complete && <div className="feedback-done">✓ 振り返り済み</div>}
     </div>
   )
 }

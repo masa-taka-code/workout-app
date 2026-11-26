@@ -1,29 +1,141 @@
+/* 上部：日付と進み具合 */
+.today-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.today-progress-text { font-size: var(--fs-body); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.today-progress { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin-top: -4px; }
+.today-progress-fill { height: 100%; border-radius: 999px; background: var(--good-solid); transition: width 200ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .today-progress-fill { transition: none; } }
+
 .today-seg .btn { min-height: 48px; }
-.today-card { padding: 16px; gap: 8px; }
-.today-title { font-size: 20px; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.today-cond {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  cursor: pointer;
+}
+.today-cond:focus-visible, .today-row:focus-visible, .today-fbrow:focus-visible, .today-title-btn:focus-visible,
+.today-add-set:focus-visible, .btn-add-main:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 種目カード（今のセットがある種目・開いた種目） */
+.today-card { padding: 12px; gap: 12px; }
+.today-title { font-size: var(--fs-label); line-height: 1.35; font-weight: 700; min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.today-title-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.today-count { flex: none; color: var(--muted); font-size: var(--fs-body); font-weight: 600; font-variant-numeric: tabular-nums; }
 .today-sets { display: flex; flex-direction: column; gap: 4px; }
 .today-add-set {
   width: 100%;
   height: 48px;
-  border: 1px solid var(--border-strong);
+  border: 1px dashed var(--control-border);
   border-radius: 8px;
-  background: var(--surface);
-  color: var(--accent);
-  font-size: 16px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-body);
   font-weight: 600;
   cursor: pointer;
 }
 .today-add-set:active { background: var(--surface-2); }
-.today-add-set:focus-visible, .btn-add-main:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+/* 畳んだ行（まだの種目・終わった種目） */
+.today-rowcard { padding: 0; gap: 0; }
+.today-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font-size: var(--fs-body);
+  cursor: pointer;
+}
+.today-row:active { background: var(--surface-2); }
+.today-rowdot {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--good-solid);
+  color: var(--on-good);
+  font-weight: 700;
+}
+.today-rowname { flex: 1; min-width: 0; font-size: var(--fs-label); font-weight: 700; overflow-wrap: anywhere; }
+.today-rowsub { flex: none; color: var(--muted); font-size: var(--fs-body); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.today-rowbadge {
+  flex: none;
+  padding: 0 8px;
+  border: 1px solid var(--control-border);
+  border-radius: 999px;
+  font-size: var(--fs-sub);
+  font-weight: 700;
+  line-height: 24px;
+  white-space: nowrap;
+}
+.today-rowbadge-good { border-color: var(--good-weak); background: var(--good-weak); color: var(--good-text); }
+.today-rowcaret { flex: none; color: var(--muted); }
+.today-fbrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px 0 48px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.today-fbdot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); margin-left: -14px; margin-right: 8px; }
+.today-rowcard .feedback { margin: 0 12px 12px; }
+
+/* 結果行 */
 .today-result { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.today-badge { padding: 4px 12px; border-radius: 999px; font-size: 14px; font-weight: 700; }
-.today-badge-good { background: var(--good-weak); color: var(--good-text); }
-.today-badge-warn { background: var(--warn-weak); color: var(--warn-text); }
-.today-pr { color: var(--pr); font-weight: 700; display: inline-block; animation: today-pop 0.3s ease-out 1; }
-@keyframes today-pop { 0% { transform: scale(1); } 50% { transform: scale(1.25); } 100% { transform: scale(1); } }
+.today-badge { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 999px; font-size: var(--fs-body); font-weight: 700; }
+.today-badge-good { background: var(--good-solid); color: var(--on-good); }
+.today-badge-miss { border: 2px solid var(--control-border); color: var(--text); }
+.today-e1rm { color: var(--muted); font-size: var(--fs-body); }
+.today-pr {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--pr-weak);
+  color: var(--pr-text);
+  font-size: var(--fs-body);
+  font-weight: 700;
+  animation: today-pop 200ms ease-out 1;
+}
+@keyframes today-pop { 0% { transform: scale(1); } 50% { transform: scale(1.08); } 100% { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) { .today-pr { animation: none; } }
 
+/* 種目が0件のときだけ、大きい accent 塗り */
 .empty .btn-add-main, .btn-add-main {
   width: 100%;
   height: 56px;
@@ -32,11 +144,13 @@
   border-radius: 8px;
   background: var(--accent);
   color: var(--on-accent);
-  font-size: 20px;
+  font-size: var(--fs-label);
   font-weight: 700;
   cursor: pointer;
 }
-.btn-add-bottom { height: 56px; font-size: 16px; }
+.btn-add-main:active { background: var(--accent-pressed); }
+/* 下の「＋ 種目を追加」は枠ボタン（青塗りは固定バーの完了ボタンだけ） */
+.btn-add-bottom { height: 52px; font-size: var(--fs-body); font-weight: 700; }
 
 .today-bw { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
 .today-bw .today-bw-input { width: 96px; flex: none; }

@@ -32,11 +32,19 @@ const LIGHT_PAIRS: [string, string][] = [
   ['accent', 'bg'], ['accent', 'surface'], ['accent', 'accent-weak'],
   ['good-text', 'good-weak'], ['warn-text', 'warn-weak'], ['on-accent', 'accent'],
   ['bad-text', 'bad-weak'], ['bad-text', 'surface'],
+  ['on-select', 'select-bg'], ['on-good', 'good-solid'], ['pr-text', 'pr-weak'], ['info-text', 'info-weak'],
+  ['on-bad', 'bad'], ['accent-text', 'accent-weak'], ['good-solid', 'surface'],
 ]
 const DARK_PAIRS: [string, string][] = [
   ['text', 'bg'], ['muted', 'surface'], ['accent', 'surface'],
   ['good-text', 'good-weak'], ['warn-text', 'warn-weak'], ['on-accent', 'accent'],
   ['bad-text', 'bad-weak'], ['bad-text', 'surface'],
+  ['on-select', 'select-bg'], ['on-good', 'good-solid'], ['pr-text', 'pr-weak'], ['info-text', 'info-weak'],
+  ['on-bad', 'bad'], ['accent-text', 'accent-weak'], ['good-solid', 'surface'],
+]
+// 部品の枠・アイコンなど文字以外は 3:1（WCAG 1.4.11）
+const UI_PAIRS: [string, string][] = [
+  ['control-border', 'surface'], ['control-border', 'bg'], ['accent', 'surface'], ['good-solid', 'surface'],
 ]
 
 describe('デザイントークンのコントラスト（WCAG AA 4.5:1）', () => {
@@ -46,6 +54,17 @@ describe('デザイントークンのコントラスト（WCAG AA 4.5:1）', () 
         expect(vars[fg], `--${fg}`).toBeDefined()
         expect(vars[bg], `--${bg}`).toBeDefined()
         expect(contrast(vars[fg], vars[bg])).toBeGreaterThanOrEqual(4.5)
+      })
+    }
+  }
+})
+
+describe('デザイントークンのコントラスト（部品の枠 3:1）', () => {
+  for (const [name, vars] of [['ライト', light], ['ダーク', dark]] as const) {
+    for (const [fg, bg] of UI_PAIRS) {
+      it(`${name}: ${fg} / ${bg}`, () => {
+        expect(vars[fg], `--${fg}`).toBeDefined()
+        expect(contrast(vars[fg], vars[bg])).toBeGreaterThanOrEqual(3)
       })
     }
   }

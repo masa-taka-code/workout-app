@@ -1,96 +1,147 @@
-.setrow { border-radius: 8px; min-width: 0; }
+.setrow { border-radius: 12px; min-width: 0; }
 .setrow-head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
-  min-height: 44px;
+  min-height: 52px;
   padding: 0 12px;
   border: 0;
   border-radius: 8px;
   background: transparent;
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--fs-body);
   text-align: left;
   cursor: pointer;
   font-variant-numeric: tabular-nums;
 }
 .setrow-head:active { background: var(--surface-2); }
 .setrow-head:focus-visible, .stepper-btn:focus-visible, .setrow-rirbtn:focus-visible,
-.setrow-donebtn:focus-visible, .setrow-sub:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.setrow-head-active { cursor: default; min-height: 28px; color: var(--muted); font-size: 12px; }
-.setrow-head-active .setrow-no { color: var(--accent); }
-.setrow-no { min-width: 28px; font-weight: 700; }
-.setrow-text { flex: 1; min-width: 0; }
-.setrow-meta { font-size: 12px; }
-.setrow-caret { flex: none; }
-.setrow-done > .setrow-head { background: var(--good-weak); color: var(--good-text); }
-.setrow-active { border-left: 3px solid var(--accent); padding: 4px 0 8px; }
-.setrow-pending.setrow-open, .setrow-done.setrow-open { background: var(--surface-2); }
-.setrow-body { display: flex; flex-direction: column; gap: 6px; padding: 4px 12px 8px; min-width: 0; }
-.setrow-active .setrow-body { padding-top: 0; }
+.setrow-sub:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.stepper { display: flex; align-items: center; gap: 4px; min-width: 0; }
+/* 左の丸（28px）：未着手は白抜き＋番号、完了は塗り＋✓、今のセットは accent 塗り＋番号 */
+.setrow-dot {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--control-border);
+  border-radius: 50%;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--muted);
+  line-height: 1;
+}
+.setrow-dot-amrap { border-color: var(--warn); }
+.setrow-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.setrow-meta {
+  flex: none;
+  padding: 0 8px;
+  border: 1px solid var(--control-border);
+  border-radius: 999px;
+  font-size: var(--fs-sub);
+  line-height: 22px;
+  color: var(--text);
+}
+.setrow-prev { flex: none; font-size: var(--fs-sub); color: var(--muted); }
+.setrow-caret { flex: none; }
+.setrow-amrap {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--warn-weak);
+  color: var(--warn-text);
+  font-size: var(--fs-sub);
+  font-weight: 700;
+  line-height: 22px;
+  white-space: nowrap;
+}
+
+/* 完了：左に 4px の緑の線、丸は緑塗り＋✓ */
+.setrow-done > .setrow-head { color: var(--text); border-left: 4px solid var(--good-solid); border-radius: 4px 8px 8px 4px; padding-left: 8px; }
+.setrow-done .setrow-dot { background: var(--good-solid); border-color: var(--good-solid); color: var(--on-good); }
+.setrow-done .setrow-dot-amrap { border-color: var(--warn); }
+
+/* 今のセット：画面で唯一の「浮いた箱」。surface 面に 2px の accent 枠 */
+.setrow-active {
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+  box-shadow: var(--float-shadow);
+  padding: 8px 4px;
+}
+.setrow-head-active { cursor: default; min-height: 36px; padding: 0 4px; color: var(--text); }
+.setrow-head-active:active { background: transparent; }
+.setrow-dot-now { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
+.setrow-dot-now.setrow-dot-amrap { border-color: var(--warn); }
+.setrow-now { font-size: var(--fs-label); font-weight: 700; }
+.setrow-count { font-size: var(--fs-label); color: var(--muted); }
+.setrow-prev-now { margin-left: auto; font-size: var(--fs-body); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 開いた完了済み・未着手のセット：1px の枠（accent は使わない） */
+.setrow-pending.setrow-open, .setrow-done.setrow-open { border: 1px solid var(--control-border); padding-bottom: 4px; }
+.setrow-body { display: flex; flex-direction: column; gap: 8px; padding: 8px 4px 4px; min-width: 0; }
+.setrow-active .setrow-body { padding: 8px 0 0; }
+
+.stepper { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .stepper-btn {
   flex: none;
-  width: 44px;
+  width: 56px;
   height: 56px;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--control-border);
   border-radius: 8px;
   background: var(--surface);
-  font-size: 24px;
+  font-size: var(--fs-num-m);
+  line-height: 1;
   cursor: pointer;
 }
 .stepper-btn:active { background: var(--surface-2); }
-.stepper .stepper-input {
-  flex: 1 1 0;
-  width: 0;
-  min-width: 0;
+.stepper-field { position: relative; flex: 1 1 0; min-width: 0; }
+.stepper-field .stepper-input {
+  width: 100%;
   height: 56px;
-  font-size: 24px;
+  padding: 0 24px 0 8px;
+  font-size: var(--fs-num-l);
+  line-height: 1.2;
   font-weight: 700;
   text-align: center;
   font-variant-numeric: tabular-nums;
-  border-color: var(--border-strong);
+  background: var(--surface);
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
 }
-.stepper-unit { flex: none; width: 28px; color: var(--muted); font-size: 14px; }
+.stepper-unit { position: absolute; right: 8px; bottom: 6px; font-size: var(--fs-sub); color: var(--muted); pointer-events: none; }
 
-.setrow-help { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
-.setrow-rir { display: flex; gap: 4px; }
+.setrow-help { font-size: var(--fs-body); color: var(--muted); margin-bottom: 4px; }
+.setrow-rir { display: flex; gap: 6px; }
 .setrow-rirbtn {
   flex: 1 1 0;
-  min-width: 44px;
-  height: 48px;
+  min-width: 0;
+  height: 52px;
   padding: 0;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--control-border);
   border-radius: 8px;
   background: var(--surface);
-  font-size: 16px;
+  font-size: var(--fs-label);
+  font-weight: 600;
   cursor: pointer;
 }
 .setrow-rirbtn:active { background: var(--surface-2); }
-.setrow-rirbtn[aria-pressed='true'] { background: var(--accent-weak); border-color: var(--accent); color: var(--accent); font-weight: 700; }
+/* 選んだ RIR は濃いグレー（インク）塗り＋✓。青は塗らない */
+.setrow-rirbtn[aria-pressed='true'] { background: var(--select-bg); border-color: var(--select-bg); color: var(--on-select); font-weight: 700; }
+.setrow-rirbtn[aria-pressed='true']::before { content: '✓'; font-size: var(--fs-sub); margin-right: 1px; }
 
-.setrow-donebtn {
-  width: 100%;
-  height: 56px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-size: 20px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.setrow-donebtn:active { filter: brightness(0.9); }
 .setrow-actions { display: flex; gap: 8px; }
 .setrow-sub {
   flex: 1;
   height: 48px;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--control-border);
   border-radius: 8px;
   background: var(--surface);
-  font-size: 16px;
+  font-size: var(--fs-body);
   cursor: pointer;
 }
 .setrow-sub:active { background: var(--surface-2); }

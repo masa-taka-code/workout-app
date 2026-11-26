@@ -3,12 +3,12 @@
   flex-direction: column;
   gap: 8px;
   min-width: 0;
-  padding: 10px;
-  border: 1px solid var(--border);
+  padding: 12px;
   border-radius: 8px;
-  background: var(--bg);
+  background: var(--surface-2);
 }
-.feedback-title { font-size: 0.875rem; font-weight: 600; }
+.feedback-title { font-size: var(--fs-body); font-weight: 600; }
 .feedback-row { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.feedback-btn { min-height: 44px; min-width: 0; font-size: 0.875rem; }
-.feedback-warn { color: var(--warn); }
+.feedback-btn { min-height: 48px; min-width: 0; font-size: var(--fs-body); }
+.feedback-warn { color: var(--warn-text); }
+.feedback-done { color: var(--good-text); font-size: var(--fs-sub); font-weight: 600; }

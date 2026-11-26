@@ -1,10 +1,10 @@
 .undo-toast {
   position: fixed;
-  left: 16px;
-  right: 16px;
+  left: 12px;
+  right: 12px;
   bottom: calc(var(--tabbar-h, 56px) + var(--timer-h, 0px) + 8px + env(safe-area-inset-bottom));
   z-index: 30;
-  max-width: 608px;
+  max-width: 616px;
   margin: 0 auto;
   display: flex;
   align-items: center;
@@ -14,9 +14,9 @@
   background: var(--text);
   color: var(--bg);
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgb(0 0 0 / 0.25);
+  box-shadow: var(--float-shadow);
 }
-.undo-text { font-size: 14px; min-width: 0; overflow-wrap: anywhere; }
+.undo-text { font-size: var(--fs-body); min-width: 0; overflow-wrap: anywhere; }
 .undo-btn {
   flex: none;
   min-height: 44px;

@@ -5,9 +5,9 @@
   min-height: 44px;
   cursor: pointer;
   color: var(--muted);
-  font-size: 0.875rem;
+  font-size: var(--fs-sub);
 }
 .warmup-list { display: flex; flex-direction: column; gap: 4px; padding-bottom: 8px; }
-.warmup-line { font-size: 0.9rem; overflow-wrap: anywhere; }
+.warmup-line { font-size: var(--fs-body); overflow-wrap: anywhere; }
 .warmup-work { font-weight: 600; color: var(--text); }
 .warmup-bare .warmup-list { padding-bottom: 0; }

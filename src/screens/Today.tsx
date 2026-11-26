@@ -5,7 +5,7 @@ import { achieved, addVolume, bestE1rm, doneSets, historyFor, localToday, planEx
 import type { Volume } from '../logic'
 import { uid } from '../storage'
 import NumInput from '../components/NumInput'
-import RestTimer from '../components/RestTimer'
+import CurrentSetBar from '../components/CurrentSetBar'
 import WarmupPanel from '../components/WarmupPanel'
 import BodyMap from '../components/BodyMap'
 import FormCheckButton from '../components/FormCheckButton'
@@ -23,7 +23,8 @@ import SetRow from '../components/SetRow'
 import OverflowMenu from '../components/OverflowMenu'
 import UndoToast from '../components/UndoToast'
 import {
-  buildNextSet, centeredScrollTop, findScrollTarget, firstUndone, hasWarmup, makeUndo, restoreSession, withoutLastSet,
+  buildNextSet, centeredScrollTop, currentSetPos, feedbackComplete, firstUndone, hasWarmup, makeUndo, previousSetText, progressCount,
+  restoreSession, withoutLastSet,
 } from '../components/todayLogic'
 import type { UndoState } from '../components/todayLogic'
 import './Today.css'
@@ -63,7 +64,16 @@ export default function Today({ data, setData }: ScreenProps) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())  // 手動で展開したセット（種目id:位置）
   const [openTool, setOpenTool] = useState<Record<string, string | null>>({})  // 種目ごとに開いている補助機能
   const [undo, setUndo] = useState<UndoState | null>(null)
-  const [scrollReq, setScrollReq] = useState<{ n: number; exerciseId: string } | null>(null)
+  const [scrollReq, setScrollReq] = useState<{ n: number } | null>(null)
+  // 「今のセット」の基準にする種目（画面の中の状態。保存しない。再読み込みのあとは未設定＝一覧の先頭から）
+  const [focusId, setFocusId] = useState<string | undefined>()
+  // ユーザーが開いた「今のセットがない種目」（終わった種目・まだの種目）
+  const [opened, setOpened] = useState<Set<string>>(() => new Set())
+  // 最後のセットを終えた直後に、振り返りのために開いておく種目
+  const [linger, setLinger] = useState<string | undefined>()
+  // 畳んだ行から「振り返りを入力」だけを開いている種目
+  const [feedbackOnly, setFeedbackOnly] = useState<Set<string>>(() => new Set())
+  const [condOpen, setCondOpen] = useState(false)  // 調子の3択を開き直しているか
 
   /**
    * 今日のセッションを更新（なければ作る）。
@@ -106,6 +116,8 @@ export default function Today({ data, setData }: ScreenProps) {
     const entry = buildEntry(ex, data)
     updateSession(s => ({ ...s, entries: [...s.entries, entry] }))
     setPicking(false)
+    // 今のセットがないときだけ、追加した種目を今のセットにする
+    if (!currentSetPos(visible, focusId)) setFocusId(ex.id)
   }
 
   /** 今日のこの種目を別の種目に入れ替える（未登録の種目なら種目一覧にも追加する） */
@@ -119,6 +131,7 @@ export default function Today({ data, setData }: ScreenProps) {
     const nextData = existing ? data : { ...data, exercises: [...data.exercises, ex] }
     const entry = buildEntry(ex, nextData, from.id)
     setUndo(null)
+    setFocusId(f => (f === from.id ? ex.id : f))
     setData(prev => ({
       ...prev,
       exercises: existing ? prev.exercises : [...prev.exercises, ex],
@@ -138,7 +151,7 @@ export default function Today({ data, setData }: ScreenProps) {
     // 反映の取り消しができるよう、反映前の状態を覚えておく（フォームの解析結果そのものは残す）
     updateSetLog(ex.id, i, { reps: result.reps, formScore: result.formScore })
     toggleDone(ex, entry, i, result.endedAt)
-    announceUndo(`${ex.name} ${i + 1}セット目に反映しました`)  // 編集のあとに出す（編集で消えるため）
+    announceUndo(`${ex.name} ${i + 1}セット目に反映しました`, true)  // 編集のあとに出す（編集で消えるため）
   }
 
   const toggleDone = (ex: Exercise, entry: Entry, i: number, restStartedAt?: number) => {
@@ -148,13 +161,26 @@ export default function Today({ data, setData }: ScreenProps) {
       primeAudio()
       setTimerStartedAt(restStartedAt)
       setTimerRun(n => (n ?? 0) + 1)
-      setScrollReq(r => ({ n: (r?.n ?? 0) + 1, exerciseId: ex.id }))
+      setScrollReq(r => ({ n: (r?.n ?? 0) + 1 }))
+      setFocusId(ex.id)
+      // この完了で種目が終わるなら、振り返りのために開いておく。ほかの種目のセットを完了したら畳む
+      setLinger(entry.sets.every((x, j) => j === i || x.done) ? ex.id : undefined)
     }
   }
 
-  /** 削除の直前の状態を覚えて、トーストを出す */
-  const announceUndo = (message: string) => {
-    if (session) setUndo(makeUndo(message, session))
+  /** 画面下の固定バーの「✓ 完了」：今のセットを完了にし、取り消せるトーストを出す */
+  const completeCurrent = () => {
+    if (!pos) return
+    const entry = visible[pos.entryIndex]
+    const ex = exById.get(entry.exerciseId)
+    if (!ex) return
+    toggleDone(ex, entry, pos.setIndex)
+    announceUndo(`${pos.setIndex + 1}セット目を完了しました`, true)  // 編集のあとに出す（編集で消えるため）
+  }
+
+  /** 削除・完了の直前の状態を覚えて、トーストを出す */
+  const announceUndo = (message: string, stopTimer = false) => {
+    if (session) setUndo(makeUndo(message, session, stopTimer))
   }
 
   const removeLastSet = (ex: Exercise, entry: Entry) => {
@@ -180,58 +206,108 @@ export default function Today({ data, setData }: ScreenProps) {
   // トレーニング中（今日の種目がある間）は画面を消さない
   useWakeLock(visible.length > 0)
 
-  const nextSet = buildNextSet(visible, exById)
+  // 今のセット：画面の印・固定バー・休憩の「次」・スクロール先はすべてここから取る
+  const pos = currentSetPos(visible, focusId)
+  const current = buildNextSet(visible, exById, focusId)
+  const progress = progressCount(visible)
 
-  // 完了ボタンのあと、次の未完了セットを「見える範囲」の中央へスクロールする
-  useEffect(() => {
-    if (!scrollReq) return
-    const from = visible.findIndex(e => e.exerciseId === scrollReq.exerciseId)
-    const pos = findScrollTarget(visible, from)
-    if (!pos) return
+  /** 今のセットを「見える範囲」（上端〜固定バーの上端）の中央へスクロールする */
+  const scrollToCurrent = () => {
+    if (!pos) return undefined
     const id = `${visible[pos.entryIndex].exerciseId}:${pos.setIndex}`
-    const raf = requestAnimationFrame(() => {
+    return requestAnimationFrame(() => {
       const el = Array.from(document.querySelectorAll<HTMLElement>('[data-set-id]')).find(x => x.dataset.setId === id)
       if (!el) return
-      const raw = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--timer-h'))
-      const timerH = Number.isFinite(raw) ? raw : 140
+      // 固定バーの高さは、レイアウト済みの実寸を測る（--timer-h は変化の直後は古いことがある）
+      const barH = document.querySelector('.csb')?.getBoundingClientRect().height ?? 176
       const rect = el.getBoundingClientRect()
-      const top = centeredScrollTop(rect.top, rect.height, window.scrollY, window.innerHeight, 56, timerH)
+      const top = centeredScrollTop(rect.top, rect.height, window.scrollY, window.innerHeight, 56, barH)
       const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
       window.scrollTo({ top, behavior: reduce ? 'auto' : 'smooth' })
     })
-    return () => cancelAnimationFrame(raf)
+  }
+
+  // 完了のあと、次の今のセットへスクロールする
+  useEffect(() => {
+    if (!scrollReq) return
+    const raf = scrollToCurrent()
+    return () => {
+      if (raf !== undefined) cancelAnimationFrame(raf)
+    }
     // scrollReq が変わった（完了を押した）ときだけ動かす
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrollReq])
 
+  const openPicker = () => {
+    setPicking(true)
+    requestAnimationFrame(() => {
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      document.getElementById('today-picker')?.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' })
+    })
+  }
+
+  const condLabel = CONDITIONS.find(c => c.value === condition)?.label ?? '普通'
+  const showCond = session?.condition === undefined || condOpen
+
+  const toggleIn = (set: Set<string>, id: string, on: boolean): Set<string> => {
+    const next = new Set(set)
+    if (on) next.add(id)
+    else next.delete(id)
+    return next
+  }
+
   return (
     <section className="screen">
-      <h1 className="screen-title">{dateLabel()}</h1>
-
-      <div className="stack">
-        <span className="muted">今日の調子</span>
-        <div className="seg today-seg">
-          {CONDITIONS.map(c => (
-            <button
-              key={c.value}
-              className="btn"
-              aria-pressed={condition === c.value}
-              onClick={() => updateSession(s => ({ ...s, condition: c.value }))}
-            >
-              {c.label}
-            </button>
-          ))}
-        </div>
+      <div className="today-head">
+        <h1 className="screen-title">{dateLabel()}</h1>
+        {progress.total > 0 && <span className="today-progress-text">{progress.done} / {progress.total} セット</span>}
       </div>
+      {progress.total > 0 && (
+        <div
+          className="today-progress"
+          role="progressbar"
+          aria-label="今日の進み具合"
+          aria-valuemin={0}
+          aria-valuemax={progress.total}
+          aria-valuenow={progress.done}
+        >
+          <div className="today-progress-fill" style={{ width: `${(progress.done / progress.total) * 100}%` }} />
+        </div>
+      )}
+
+      {showCond ? (
+        <div className="stack">
+          <span className="muted">今日の調子</span>
+          <div className="seg today-seg">
+            {CONDITIONS.map(c => (
+              <button
+                key={c.value}
+                className="btn"
+                aria-pressed={condition === c.value}
+                onClick={() => {
+                  updateSession(s => ({ ...s, condition: c.value }))
+                  setCondOpen(false)
+                }}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <button type="button" className="today-cond" aria-expanded={false} onClick={() => setCondOpen(true)}>
+          調子：{condLabel} <span aria-hidden="true">▸</span>
+        </button>
+      )}
 
       {visible.length === 0 && !picking && (
         <div className="empty">
-          <p>今日の種目を選んで始めましょう</p>
+          <p>まず種目を1つ選びましょう</p>
           <button className="btn-add-main" onClick={() => setPicking(true)}>＋ 種目を追加</button>
         </div>
       )}
 
-      {visible.map(entry => {
+      {visible.map((entry, idx) => {
         const ex = exById.get(entry.exerciseId)!
         const t = entry.target
         const last = historyFor(ex.id, data.sessions, today)
@@ -240,13 +316,72 @@ export default function Today({ data, setData }: ScreenProps) {
         const prevBest = Math.max(0, ...last.map(e => bestE1rm(e, ex)))
         const allDone = entry.sets.length > 0 && entry.sets.every(s => s.done)
         const ach = allDone ? achieved(entry) : undefined
-        const activeIdx = firstUndone(entry)
+        const fbDone = feedbackComplete(entry.feedback)
+        const isCurrent = pos?.entryIndex === idx
+        const lingering = linger === ex.id && allDone && !fbDone
+        const cardOpen = isCurrent || opened.has(ex.id) || lingering
+        const doneCount = entry.sets.filter(s => s.done).length
+
+        // 畳んだ行（まだの種目／終わった種目）
+        if (!cardOpen) {
+          const undone = entry.sets.filter(s => !s.done)
+          const nextSet = undone[0]
+          return (
+            <article key={ex.id} className="card today-rowcard">
+              <button
+                type="button"
+                className="today-row"
+                aria-expanded={false}
+                onClick={() => {
+                  if (firstUndone(entry) === -1) setOpened(o => toggleIn(o, ex.id, true))
+                  else setFocusId(ex.id)  // 開いて、その種目を「次」にする
+                }}
+              >
+                {allDone && <span className="today-rowdot" aria-hidden="true">✓</span>}
+                <span className="today-rowname">{ex.name}</span>
+                {allDone ? (
+                  <>
+                    <span className="today-rowsub">{entry.sets.length}/{entry.sets.length}</span>
+                    <span className={`today-rowbadge${ach ? ' today-rowbadge-good' : ''}`}>{ach ? '✓ 達成' : '△ 未達'}</span>
+                  </>
+                ) : (
+                  nextSet && (
+                    <span className="today-rowsub">
+                      {nextSet.weight > 0 ? `${num(nextSet.weight)}kg × ${nextSet.reps}回 × ${undone.length}` : `${nextSet.reps}回 × ${undone.length}`}
+                    </span>
+                  )
+                )}
+                <span className="today-rowcaret" aria-hidden="true">▸</span>
+              </button>
+              {allDone && !fbDone && (
+                <button
+                  type="button"
+                  className="today-fbrow"
+                  aria-expanded={feedbackOnly.has(ex.id)}
+                  onClick={() => setFeedbackOnly(o => toggleIn(o, ex.id, !o.has(ex.id)))}
+                >
+                  <span className="today-fbdot" aria-hidden="true" />
+                  振り返りを入力 <span aria-hidden="true">{feedbackOnly.has(ex.id) ? '▾' : '▸'}</span>
+                </button>
+              )}
+              {allDone && feedbackOnly.has(ex.id) && (
+                <FeedbackPanel ex={ex} entry={entry} onChange={feedback => updateEntry(ex.id, e => ({ ...e, feedback }))} />
+              )}
+            </article>
+          )
+        }
+
+        const activeIdx = isCurrent && pos ? pos.setIndex : -1
         const isOpen = (i: number) => i === activeIdx || expanded.has(`${ex.id}:${i}`)
         const firstOpen = entry.sets.findIndex((_, i) => isOpen(i))
         const hint = t ? rotationHint(ex, data, today) : undefined
         const formKey = formKeyFor(ex)
+        const firstSetDone = entry.sets.length > 0 && entry.sets[0].done
+        const warm = !!t && hasWarmup(ex, t)
+        // 「アップ」は1セット目が終わるまでセットの上に1つだけ出し、終わったらチップ列に移す
+        const warmOnTop = warm && !firstSetDone
         const chips = [
-          ...(t && hasWarmup(ex, t) ? [{ key: 'warmup', label: 'アップ' }] : []),
+          ...(warm && !warmOnTop ? [{ key: 'warmup', label: 'アップ' }] : []),
           { key: 'body', label: '筋肉' },
           ...(t ? [{ key: 'substitute', label: '代わり' }] : []),
           ...(formKey ? [{ key: 'form', label: '撮影β' }] : []),
@@ -254,10 +389,50 @@ export default function Today({ data, setData }: ScreenProps) {
         const toolSaved = openTool[ex.id]
         const tool = toolSaved === undefined ? (hint ? 'substitute' : null) : toolSaved
         const panelId = `${ex.id}-${tool}`
+        const toggleTool = (k: string) => setOpenTool(m => ({ ...m, [ex.id]: tool === k ? null : k }))
+        const panel = tool && (
+          <div className="tool-panel" id={panelId}>
+            {tool === 'warmup' && t && <WarmupPanel ex={ex} target={t} bare />}
+            {tool === 'body' && <BodyMap highlights={exerciseHighlights(ex)} size="sm" label={`${ex.name}で効く筋肉`} />}
+            {tool === 'substitute' && (
+              <SubstitutePanel ex={ex} entry={entry} data={data} bare onReplace={next => replaceExercise(ex, next)} />
+            )}
+            {tool === 'form' && (
+              <FormCheckButton
+                ex={ex}
+                entry={entry}
+                data={data}
+                bare
+                onApply={result => applyFormResult(ex, entry, result)}
+                setData={setData}
+                onSaveBaseline={(key, baseline) =>
+                  setData(prev => ({
+                    ...prev,
+                    formBaselines: { ...prev.formBaselines, [key]: { ...baseline, savedAt: today } },
+                  }))
+                }
+              />
+            )}
+          </div>
+        )
+        const closeCard = () => {
+          setOpened(o => toggleIn(o, ex.id, false))
+          setLinger(l => (l === ex.id ? undefined : l))
+          setFeedbackOnly(o => toggleIn(o, ex.id, false))
+        }
         return (
           <article key={ex.id} className="card today-card">
             <div className="card-head">
-              <h2 className="today-title">{ex.name}</h2>
+              <h2 className="today-title">
+                {isCurrent ? (
+                  ex.name
+                ) : (
+                  <button type="button" className="today-title-btn" aria-expanded={true} onClick={closeCard}>
+                    {ex.name} <span aria-hidden="true">▾</span>
+                  </button>
+                )}
+              </h2>
+              <span className="today-count">{isCurrent && pos ? `${pos.setIndex + 1}/${entry.sets.length}` : `${doneCount}/${entry.sets.length}`}</span>
               <OverflowMenu
                 label={`${ex.name}のメニュー`}
                 items={[
@@ -266,39 +441,20 @@ export default function Today({ data, setData }: ScreenProps) {
                 ]}
               />
             </div>
-            {t && <TargetBlock ex={ex} target={t} previous={prev} />}
+            {t && <TargetBlock ex={ex} target={t} />}
             {!t && prev && <p className="muted">前回 {prev}</p>}
             {hint && <p className="target-caution-line">{hint.message}</p>}
-            <ToolChips
-              items={chips}
-              openKey={tool}
-              idPrefix={ex.id}
-              onToggle={k => setOpenTool(m => ({ ...m, [ex.id]: tool === k ? null : k }))}
-            />
-            {tool && (
-              <div className="tool-panel" id={panelId}>
-                {tool === 'warmup' && t && <WarmupPanel ex={ex} target={t} bare />}
-                {tool === 'body' && <BodyMap highlights={exerciseHighlights(ex)} size="sm" label={`${ex.name}で効く筋肉`} />}
-                {tool === 'substitute' && (
-                  <SubstitutePanel ex={ex} entry={entry} data={data} bare onReplace={next => replaceExercise(ex, next)} />
-                )}
-                {tool === 'form' && (
-                  <FormCheckButton
-                    ex={ex}
-                    entry={entry}
-                    data={data}
-                    bare
-                    onApply={result => applyFormResult(ex, entry, result)}
-                    setData={setData}
-                    onSaveBaseline={(key, baseline) =>
-                      setData(prev => ({
-                        ...prev,
-                        formBaselines: { ...prev.formBaselines, [key]: { ...baseline, savedAt: today } },
-                      }))
-                    }
-                  />
-                )}
-              </div>
+            {warmOnTop && (
+              <>
+                <ToolChips
+                  solo
+                  items={[{ key: 'warmup', label: 'アップ' }]}
+                  openKey={tool}
+                  idPrefix={ex.id}
+                  onToggle={toggleTool}
+                />
+                {tool === 'warmup' && panel}
+              </>
             )}
 
             <div className="today-sets">
@@ -309,6 +465,8 @@ export default function Today({ data, setData }: ScreenProps) {
                     set={s}
                     target={t}
                     increment={ex.increment}
+                    total={entry.sets.length}
+                    previous={previousSetText(last[0], i)}
                     active={i === activeIdx}
                     expanded={expanded.has(`${ex.id}:${i}`)}
                     showRirHelp={i === firstOpen}
@@ -328,9 +486,13 @@ export default function Today({ data, setData }: ScreenProps) {
               ))}
             </div>
 
+            <ToolChips items={chips} openKey={tool} idPrefix={ex.id} onToggle={toggleTool} />
+            {tool && !(tool === 'warmup' && warmOnTop) && panel}
+
             <button
               className="today-add-set"
-              onClick={() =>
+              onClick={() => {
+                setFocusId(ex.id)
                 updateEntry(ex.id, e => {
                   const lastSet = e.sets[e.sets.length - 1]
                   const copy: SetLog = lastSet
@@ -338,16 +500,18 @@ export default function Today({ data, setData }: ScreenProps) {
                     : { weight: e.target?.kind === 'first' ? 0 : (e.target?.weight ?? 0), reps: e.target?.reps ?? ex.repMin, done: false }
                   return { ...e, sets: [...e.sets, copy] }
                 })
-              }
+              }}
             >
               ＋ セットを追加
             </button>
 
             {(ach !== undefined || best > 0) && (
               <div className="today-result">
-                {ach === true && <span className="today-badge today-badge-good">目標達成</span>}
-                {ach === false && <span className="today-badge today-badge-warn">未達</span>}
-                {best > 0 && <span className="muted">推定1RM {num(Math.round(best * 10) / 10)}kg</span>}
+                {ach === true && <span className="today-badge today-badge-good">✓ 目標達成</span>}
+                {ach === false && (
+                  <span className="today-badge today-badge-miss">△ 未達{t && t.kind !== 'first' ? `（目標 ${t.reps}回）` : ''}</span>
+                )}
+                {best > 0 && <span className="today-e1rm">推定1RM {num(Math.round(best * 10) / 10)}kg</span>}
                 {best > 0 && prevBest > 0 && best > prevBest && <span className="today-pr">★ 自己ベスト</span>}
               </div>
             )}
@@ -360,7 +524,7 @@ export default function Today({ data, setData }: ScreenProps) {
       })}
 
       {picking ? (
-        <div className="card">
+        <div className="card" id="today-picker">
           <div className="card-head">
             <h2 className="card-title">種目を選ぶ</h2>
             <button className="btn btn-ghost" onClick={() => setPicking(false)}>閉じる</button>
@@ -383,7 +547,7 @@ export default function Today({ data, setData }: ScreenProps) {
         </div>
       ) : (
         visible.length > 0 && (
-          <button className="btn btn-primary btn-add-bottom" onClick={() => setPicking(true)}>＋ 種目を追加</button>
+          <button className="btn btn-add-bottom" onClick={() => setPicking(true)}>＋ 種目を追加</button>
         )
       )}
 
@@ -411,14 +575,20 @@ export default function Today({ data, setData }: ScreenProps) {
         </div>
       </div>
 
-      {timerRun !== undefined && (
-        <RestTimer
-          key={timerRun}
-          seconds={data.restSeconds}
-          sound={data.sound ?? true}
-          next={nextSet}
-          startedAt={timerStartedAt}
-          onSkip={() => setTimerRun(undefined)}
+      {visible.length > 0 && (
+        <CurrentSetBar
+          current={current}
+          rest={
+            timerRun === undefined
+              ? undefined
+              : { run: timerRun, seconds: data.restSeconds, sound: data.sound ?? true, startedAt: timerStartedAt }
+          }
+          onComplete={completeCurrent}
+          onJump={() => void scrollToCurrent()}
+          onSkipRest={() => setTimerRun(undefined)}
+          // 完了ボタンの押下と同時に呼ばれても、新しく始まった休憩を消さない（終わった休憩のときだけ消す）
+          onRestFinishedShown={() => setTimerRun(cur => (cur === timerRun ? undefined : cur))}
+          onAddExercise={openPicker}
         />
       )}
 
@@ -428,6 +598,7 @@ export default function Today({ data, setData }: ScreenProps) {
           onUndo={() => {
             const snap = undo.session
             setData(prev => restoreSession(prev, snap))
+            if (undo.stopTimer) setTimerRun(undefined)
             setUndo(null)
           }}
           onExpire={() => setUndo(null)}

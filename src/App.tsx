@@ -10,6 +10,7 @@ import Analysis from './screens/Analysis'
 import Exercises from './screens/Exercises'
 import Settings from './screens/Settings'
 import ErrorBoundary from './components/ErrorBoundary'
+import TabIcon from './components/TabIcon'
 
 const TABS = [
   { id: 'today', label: '記録', Screen: Today },
@@ -79,7 +80,8 @@ export default function App() {
       <nav className="tabbar" aria-label="メニュー">
         {TABS.map(t => (
           <button key={t.id} aria-current={tab === t.id ? 'page' : undefined} onClick={() => select(t.id)}>
-            {t.label}
+            <TabIcon name={t.id} />
+            <span>{t.label}</span>
           </button>
         ))}
       </nav>

@@ -1,6 +1,16 @@
-import type { AppData, Entry, Exercise, Session, SetLog, Target } from '../types'
+import type { AppData, Entry, Exercise, Feedback, Session, SetLog, Target } from '../types'
 import { warmupSets } from '../warmup'
-import type { NextSet } from './RestTimer'
+
+/** 固定バー・休憩タイマーに見せる「今のセット／次のセット」 */
+export interface NextSet {
+  exerciseName: string
+  /** 1 始まり */
+  setNo: number
+  totalSets: number
+  /** 0 は未定（初回） */
+  weight: number
+  reps: number
+}
 
 export interface SetPos {
   /** entries 内の位置 */
@@ -22,13 +32,23 @@ export function findFirstUndone(entries: Entry[], isVisible: (e: Entry) => boole
   return undefined
 }
 
-/** 完了ボタンのあとにスクロールする先：同じ種目の次の未完了セット、なければ次の種目以降の最初の未完了セット */
-export function findScrollTarget(entries: Entry[], fromEntryIndex: number, isVisible: (e: Entry) => boolean = () => true): SetPos | undefined {
-  if (fromEntryIndex >= 0 && fromEntryIndex < entries.length && isVisible(entries[fromEntryIndex])) {
-    const setIndex = firstUndone(entries[fromEntryIndex])
-    if (setIndex !== -1) return { entryIndex: fromEntryIndex, setIndex }
-  }
-  for (let entryIndex = fromEntryIndex + 1; entryIndex < entries.length; entryIndex++) {
+/**
+ * 「今のセット」の位置。画面の今のセットの印、固定バー、休憩の「次」、完了後のスクロール先はすべてこれから取る。
+ * 判定の順：focus の種目の最初の未完了 → それより後ろの種目 → 先頭に戻って focus の手前まで。
+ * focus が未設定・一覧にないときは、先頭から見る。削除済みの種目（isVisible が false）は飛ばす。すべて完了なら undefined。
+ */
+export function currentSetPos(
+  entries: Entry[],
+  focusExerciseId: string | undefined,
+  isVisible: (e: Entry) => boolean = () => true,
+): SetPos | undefined {
+  const focus = focusExerciseId === undefined ? -1 : entries.findIndex(e => e.exerciseId === focusExerciseId)
+  if (focus === -1) return findFirstUndone(entries, isVisible)
+  const order = [
+    ...entries.map((_, i) => i).slice(focus),
+    ...entries.map((_, i) => i).slice(0, focus),
+  ]
+  for (const entryIndex of order) {
     if (!isVisible(entries[entryIndex])) continue
     const setIndex = firstUndone(entries[entryIndex])
     if (setIndex !== -1) return { entryIndex, setIndex }
@@ -36,9 +56,9 @@ export function findScrollTarget(entries: Entry[], fromEntryIndex: number, isVis
   return undefined
 }
 
-/** 休憩タイマーに渡す「次のセット」。種目が一覧にない（削除済みの）ものは飛ばす */
-export function buildNextSet(entries: Entry[], exById: Map<string, Exercise>): NextSet | undefined {
-  const pos = findFirstUndone(entries, e => exById.has(e.exerciseId))
+/** 固定バー・休憩タイマーに渡す「今のセット」。種目が一覧にない（削除済みの）ものは飛ばす */
+export function buildNextSet(entries: Entry[], exById: Map<string, Exercise>, focusExerciseId?: string): NextSet | undefined {
+  const pos = currentSetPos(entries, focusExerciseId, e => exById.has(e.exerciseId))
   if (!pos) return undefined
   const entry = entries[pos.entryIndex]
   const set = entry.sets[pos.setIndex]
@@ -50,6 +70,30 @@ export function buildNextSet(entries: Entry[], exById: Map<string, Exercise>): N
     reps: set.reps,
   }
 }
+
+/** 今日の進み具合（完了したセット数／全セット数） */
+export function progressCount(entries: Entry[]): { done: number; total: number } {
+  let done = 0
+  let total = 0
+  for (const e of entries) {
+    total += e.sets.length
+    done += e.sets.filter(s => s.done).length
+  }
+  return { done, total }
+}
+
+const roundNum = (n: number): string => String(Math.round(n * 100) / 100)
+
+/** 前回の同じ番号のセット（例「60×10」）。前回に完了した同じ番号のセットがなければ undefined */
+export function previousSetText(prevEntry: Entry | undefined, index: number): string | undefined {
+  const s = prevEntry?.sets[index]
+  if (!s || !s.done) return undefined
+  return `${roundNum(s.weight)}×${s.reps}`
+}
+
+/** 振り返りの4項目がすべて入っているか */
+export const feedbackComplete = (fb: Feedback | undefined): boolean =>
+  fb !== undefined && fb.pump !== undefined && fb.workload !== undefined && fb.soreness !== undefined && fb.joint !== undefined
 
 /** 数値を delta ずつ増減する（0 未満にしない。小数の誤差は丸める） */
 export function stepValue(value: number, delta: number): number {
@@ -76,9 +120,11 @@ export function hasWarmup(ex: Exercise, target: Target | undefined): boolean {
 export interface UndoState {
   message: string
   session: Session
+  /** 取り消したら休憩タイマーも止める（セット完了の取り消し） */
+  stopTimer: boolean
 }
 
-export const makeUndo = (message: string, session: Session): UndoState => ({ message, session })
+export const makeUndo = (message: string, session: Session, stopTimer = false): UndoState => ({ message, session, stopTimer })
 
 /** 削除直前の session に戻す（同じ id の session を差し替える。無ければ足す） */
 export function restoreSession(data: AppData, session: Session): AppData {

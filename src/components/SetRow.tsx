@@ -12,13 +12,18 @@ interface Props {
   target: Target | undefined
   /** 重量の刻み */
   increment: number
-  /** 今のセット（最初の未完了セット）。常に展開し、閉じられない */
+  /** 全セット数（「今のセット 2/4」の表示用） */
+  total: number
+  /** 前回の同じ番号のセット（例「60×10」）。なければ省略 */
+  previous?: string
+  /** 今のセット（画面全体で1つだけ。currentSetPos が指すもの）。常に展開し、閉じられない */
   active: boolean
   expanded: boolean
   /** 「余力（あと何回できた？）」の説明をこの行に出す（カードの最初の展開セットだけ） */
   showRirHelp: boolean
   onToggleExpand: () => void
   onChange: (patch: Partial<SetLog>) => void
+  /** 完了の取り消し（完了済みのセットを展開したときだけ使う。完了は画面下の固定バーで押す） */
   onToggleDone: () => void
 }
 
@@ -33,25 +38,35 @@ function Stepper({ value, step, mode, label, unit, onChange }: {
   return (
     <div className="stepper">
       <button type="button" className="stepper-btn" aria-label={`${label}を減らす`} onClick={() => onChange(stepValue(value, -step))}>−</button>
-      <NumInput mode={mode} step={step} label={label} placeholder={unit} value={value} className="stepper-input" onChange={onChange} />
+      <div className="stepper-field">
+        <NumInput mode={mode} step={step} label={label} placeholder="0" value={value} className="stepper-input" onChange={onChange} />
+        <span className="stepper-unit" aria-hidden="true">{unit}</span>
+      </div>
       <button type="button" className="stepper-btn" aria-label={`${label}を増やす`} onClick={() => onChange(stepValue(value, step))}>＋</button>
-      <span className="stepper-unit">{unit}</span>
     </div>
   )
 }
 
 /** 1セット分の表示。今のセットと展開中のセットは入力欄つき、それ以外は1行 */
-export default function SetRow({ index, set: s, target, increment, active, expanded, showRirHelp, onToggleExpand, onChange, onToggleDone }: Props) {
+export default function SetRow({ index, set: s, target, increment, total, previous, active, expanded, showRirHelp, onToggleExpand, onChange, onToggleDone }: Props) {
   const no = index + 1
   const open = active || expanded
   const state = s.done ? 'done' : active ? 'active' : 'pending'
 
   const summary = (
     <>
-      <span className="setrow-no">{s.done ? `✓ ${no}` : no}</span>
-      <span className="setrow-text">{setSummary(s)}</span>
+      <span className={`setrow-dot${s.amrap ? ' setrow-dot-amrap' : ''}`} aria-hidden="true">
+        {s.done ? '✓' : no}
+      </span>
+      <span className="setrow-text">
+        {s.done && <span className="sr-only">{no}セット目 完了　</span>}
+        {setSummary(s)}
+        {s.amrap && <span className="setrow-amrap">限界まで</span>}
+      </span>
       {s.done && typeof s.rir === 'number' && <span className="setrow-meta">余力{s.rir}</span>}
-      {s.note && <span className="setrow-meta">メモ</span>}
+      {s.done && s.note && <span className="setrow-meta">メモ</span>}
+      {!s.done && previous && <span className="setrow-prev">前回 {previous}</span>}
+      <span className="setrow-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>
     </>
   )
 
@@ -59,13 +74,15 @@ export default function SetRow({ index, set: s, target, increment, active, expan
     <div className={`setrow setrow-${state}${open ? ' setrow-open' : ''}`} data-set-key={active ? 'active' : undefined}>
       {active ? (
         <div className="setrow-head setrow-head-active">
-          <span className="setrow-no">{no}</span>
-          <span className="setrow-text">{no}セット目</span>
+          <span className={`setrow-dot setrow-dot-now${s.amrap ? ' setrow-dot-amrap' : ''}`}>{no}</span>
+          <span className="setrow-now">今のセット</span>
+          <span className="setrow-count">{no}/{total}</span>
+          {s.amrap && <span className="setrow-amrap">限界まで</span>}
+          {previous && <span className="setrow-prev setrow-prev-now">前回 {previous}</span>}
         </div>
       ) : (
         <button type="button" className="setrow-head" aria-expanded={open} onClick={onToggleExpand}>
           {summary}
-          <span className="setrow-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>
         </button>
       )}
 
@@ -105,13 +122,11 @@ export default function SetRow({ index, set: s, target, increment, active, expan
           </div>
           <AmrapHint set={s} target={target} />
           <SetNote value={s.note} label={`${no}セット目のメモ`} onChange={note => onChange({ note })} />
-          {s.done ? (
+          {s.done && (
             <div className="setrow-actions">
               <button type="button" className="setrow-sub" onClick={onToggleDone}>完了を取り消す</button>
               <button type="button" className="setrow-sub" onClick={onToggleExpand}>閉じる</button>
             </div>
-          ) : (
-            <button type="button" className="setrow-donebtn" aria-label={`${no}セット目を完了`} onClick={onToggleDone}>✓ 完了</button>
           )}
         </div>
       )}
