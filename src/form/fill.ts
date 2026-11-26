@@ -307,6 +307,12 @@ export function refineRep(key: FormExerciseKey, frames: MeasureFrame[], opts: Re
   let changed = false
   for (let i = 0; i < n; i++) {
     const f = frames[i]
+    // 少数側（使った側と別の側）で主関節を実測したコマは、その側の角度をそのまま使う。
+    // 主関節の角度は左右どちらでも同じ量を表すので、角度の系列としては使える（捨てると、側が入れ替わる種目で最下点が浅く出る）
+    if (f.side && f.side !== side && f.visible && f.angle !== undefined && main.every(j => f.src?.[j] === 'measured' && !!f.pts?.[j])) {
+      out[i] = f
+      continue
+    }
     // 補間した結果、主関節が揃うか
     const src: Partial<Record<Joint, JointSource>> = {}
     for (const j of joints) src[j] = filled[j].source[i]

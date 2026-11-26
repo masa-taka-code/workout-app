@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import type { ComponentType } from 'react'
 import { useAppData } from './storage'
 import { localToday, weekStart } from './logic'
+import { restoreSession } from './components/todayLogic'
 import { nextWeeklyTargets } from './weekly'
-import type { ScreenProps } from './types'
+import type { ScreenProps, Session } from './types'
 import Today from './screens/Today'
 import History from './screens/History'
 import Analysis from './screens/Analysis'
@@ -11,6 +12,7 @@ import Exercises from './screens/Exercises'
 import Settings from './screens/Settings'
 import ErrorBoundary from './components/ErrorBoundary'
 import TabIcon from './components/TabIcon'
+import UndoToast from './components/UndoToast'
 
 const TABS = [
   { id: 'today', label: '記録', Screen: Today },
@@ -63,6 +65,14 @@ export default function App() {
     }
   }
 
+  // 履歴で削除した記録を5秒間だけ取り消せるように覚えておく（タブを移っても残す。続けて消したぶんはまとめて戻す）
+  const [deleted, setDeleted] = useState<{ sessions: Session[]; message: string } | null>(null)
+  const onDeleted = (session: Session, message: string) =>
+    setDeleted(prev => {
+      const sessions = [...(prev?.sessions ?? []), session]
+      return { sessions, message: sessions.length === 1 ? message : `${sessions.length}件の記録を削除しました` }
+    })
+
   // 同じタブで落ちた場合も作り直せるように、戻すたびに番号を変えて ErrorBoundary を新しくする
   const [resetCount, setResetCount] = useState(0)
   const resetToToday = () => {
@@ -75,8 +85,19 @@ export default function App() {
   return (
     <>
       <ErrorBoundary key={`${tab}-${resetCount}`} onReset={resetToToday}>
-        <Screen data={data} setData={setData} />
+        {tab === 'history' ? <History data={data} setData={setData} onDeleted={onDeleted} /> : <Screen data={data} setData={setData} />}
       </ErrorBoundary>
+      {deleted && (
+        <UndoToast
+          message={deleted.message}
+          onUndo={() => {
+            const snaps = deleted.sessions
+            setData(prev => snaps.reduce(restoreSession, prev))
+            setDeleted(null)
+          }}
+          onExpire={() => setDeleted(null)}
+        />
+      )}
       <nav className="tabbar" aria-label="メニュー">
         {TABS.map(t => (
           <button key={t.id} aria-current={tab === t.id ? 'page' : undefined} onClick={() => select(t.id)}>

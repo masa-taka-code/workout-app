@@ -635,7 +635,9 @@ function trendOf(report: Pick<FormReport, 'stretch' | 'faults'>, ctx: FormContex
 // ---------------------------------------------------------------------------
 
 /** 1セット分のレップから詳細レポートを作る */
-export function analyzeSet(reps: RepResult[], rawCtx: FormContext): FormReport {
+export function analyzeSet(reps: RepResult[], inCtx: FormContext): FormReport {
+  // 基準の種目キーが今の種目と違うときは使わない（別の種目の基準で判定しない）
+  const rawCtx: FormContext = inCtx.personal && inCtx.personal.key !== inCtx.key ? { ...inCtx, personal: undefined } : inCtx
   const measured = reps.filter(r => r.metrics)
   const usable = reps.filter(isUsable)
   // 自分の基準は、撮影条件が今のセットと合うときだけ使う。合わなければ一般のしきい値で判定し、注記を出す

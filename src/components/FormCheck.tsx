@@ -380,7 +380,8 @@ export default function FormCheck({
       placementWinRef.current.push({ t, pose: corrected, world, tiltDeg })
       // 計測中の判定は、計測開始時に固定した値（傾き・体節長）と比べる
       const judged = placementWinRef.current.judge(formKey, { aspect: aspectNow, fixed: fixedRef.current })
-      if (tiltDeg !== undefined && !tiltKnownRef.current) {
+      // 傾き補正ありと扱うのは、計測開始時に傾きを固定できたとき（fixedRef）だけ。計測開始後に届いた値は補正に使わない
+      if (fixedRef.current.tiltDeg !== undefined && !tiltKnownRef.current) {
         tiltKnownRef.current = true
         setTiltKnown(true)
       }
@@ -466,7 +467,8 @@ export default function FormCheck({
       if (!r.end) return
       if (isFile) {
         // 8 秒以上レップが無い区間でセットを区切り、次のセットを数え直す
-        pushFileSet(reps, r.state.lastRepAt ?? t)
+        // （伸びきり待ちのレップがあれば flush で確定してから入れる）
+        pushFileSet(tracker.flush(), r.state.lastRepAt ?? t)
         resetCounting()
         fileSetStartRef.current = undefined
         return

@@ -777,3 +777,19 @@ describe('追加6種目：履歴の要約と前回比較', () => {
     expect(s.faultCounts).toEqual({ 'lean-back': 5 })
   })
 })
+
+describe('基準の種目キーの一致', () => {
+  it('種目キーが違う基準は使わない（基準なしと同じレポートになり、注記も出ない）', () => {
+    const reps = squatReps([100, 100, 100], { viewOk: 'ok' })
+    const wrong = {
+      version: 2 as const, key: 'curl' as const, savedAt: '2026-11-01', weight: 60, repCount: 5,
+      stats: { romDeg: { med: 40, mad: 2 } },
+      conditions: { source: 'live' as const, view: 'front' as const },
+      belowGeneral: [],
+    }
+    const without = analyzeSet(reps, ctx('squat'))
+    const withWrong = analyzeSet(reps, ctx('squat', { personal: wrong }))
+    expect(withWrong.baselineNote).toBeUndefined()
+    expect(JSON.stringify(withWrong)).toBe(JSON.stringify(without))
+  })
+})

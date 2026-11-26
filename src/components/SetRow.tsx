@@ -32,8 +32,8 @@ interface Props {
 }
 
 /**
- * −/＋ ボタン。押した瞬間に1回、400ms 押し続けると 100ms ごとに連続して動く。
- * 指・マウスを離す／ボタンの外へ出る／キャンセル（スクロールなど）／フォーカスが外れると止まる。
+ * −/＋ ボタン。指を離した時に1回動く（触れただけ・スクロールでは動かない）。400ms 押し続けると 100ms ごとに連続して動く。
+ * ボタンの外へ出る／キャンセル（スクロールなど）／フォーカスが外れると、動かさずに止まる。
  * キーボード（Enter・Space）は click で1回ずつ動く。
  */
 function HoldButton({ label, onStep, children }: { label: string; onStep: () => boolean | void; children: ReactNode }) {
@@ -74,12 +74,13 @@ function HoldButton({ label, onStep, children }: { label: string; onStep: () => 
       aria-label={label}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
-      onPointerUp={stop}
+      onPointerUp={() => holdRef.current?.release()}
       onPointerCancel={stop}
+      onPointerLeave={stop}
       onLostPointerCapture={stop}
       onBlur={stop}
       onContextMenu={e => e.preventDefault()}
-      // マウス・タッチの操作は pointerdown で動かし済み。detail が 0 の click だけ（キーボード）をここで動かす
+      // マウス・タッチの操作は pointerup（長押しは連続実行）で動かし済み。detail が 0 の click だけ（キーボード）をここで動かす
       onClick={e => {
         if (e.detail === 0) stepRef.current()
       }}

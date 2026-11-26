@@ -236,6 +236,7 @@ export class RepTracker {
       for (const j of joints) src[j] = 'missing'
       this.gap = true
       this.rep?.frames.push({ t: timeMs, visible: false, src })
+      this.confirmPostOnTimeout(timeMs)
       return this.result(false, {}, timeMs)
     }
     if (world) {
@@ -260,6 +261,7 @@ export class RepTracker {
     if (!MAIN_JOINTS[this.key].every(j => src[j] === 'measured')) {
       this.gap = true
       this.rep?.frames.push({ t: timeMs, visible: false, side, pose, world, pts, src, placement: opts.placement })
+      this.confirmPostOnTimeout(timeMs)
       return this.result(false, {}, timeMs)
     }
     const prevSide = this.side
@@ -359,6 +361,12 @@ export class RepTracker {
     const rep = this.rep
     if (rep?.post) this.completeRep(rep, rep.post.peakT, rep.post.peakT)
     return [...this.reps]
+  }
+
+  /** 伸びきり待ちのまま、見えないコマ（姿勢なし・主関節が欠け）が続いても、時間切れで最も伸びた時点を終点に確定する */
+  private confirmPostOnTimeout(timeMs: number) {
+    const rep = this.rep
+    if (rep?.post && timeMs - rep.post.crossT >= POST_WAIT_MS) this.completeRep(rep, rep.post.peakT, timeMs)
   }
 
   /** 上の位置を超えたレップを確定する。endT は時間計測の終点、nowT は確定した時刻（cue の表示開始） */
@@ -608,7 +616,8 @@ export class RepTracker {
           issues.push(makeIssue('rom-drop', '疲れて可動域が狭くなっています', '可動域を保てる回数で止めるか、重量を下げましょう', 10))
         }
       }
-      if (eccentricSec < FAST_DOWN_SEC) {
+      // 最下点が推定のレップは、下ろす時間も断定できないのでテンポの減点をしない
+      if (!bottomEstimated && eccentricSec < FAST_DOWN_SEC) {
         issues.push(makeIssue('fast-down', '下ろす動作が速すぎます', '1〜3秒かけてコントロールして下ろしましょう', 10))
       }
     }

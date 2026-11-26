@@ -48,6 +48,9 @@ export default function FormCheckButton({ ex, entry, data, onApply, setData, onS
   if (!key) return null
 
   const last = data.formReports?.find(r => r.exerciseId === ex.id)
+  // 基準は種目の id を優先し、無ければ古い種目キー（'squat' など）のものを使う。種目キーが違う基準は使わない
+  const savedBaseline = data.formBaselines?.[ex.id] ?? data.formBaselines?.[key]
+  const matchedBaseline = savedBaseline && savedBaseline.key === key ? savedBaseline : undefined
   const weight = entry.sets.find(s => !s.done)?.weight ?? 0
 
   /** 要約とレポートを先頭に追加して保存する */
@@ -77,8 +80,7 @@ export default function FormCheckButton({ ex, entry, data, onApply, setData, onS
         <FormCheck
           ex={ex}
           formKey={key}
-          // 基準は種目の id を優先し、無ければ古い種目キー（'squat' など）のものを使う
-          baseline={data.formBaselines?.[ex.id] ?? data.formBaselines?.[key]}
+          baseline={matchedBaseline}
           history={(data.formSessions ?? []).filter(h => h.exerciseId === ex.id)}
           weight={weight}
           recentBestWeight={recentBest(data, ex.id)}

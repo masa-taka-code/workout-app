@@ -82,8 +82,8 @@ export default function Today({ data, setData }: ScreenProps) {
    * 編集したら「元に戻す」は無効にする（後の操作まで消えないように）。
    * 取り消し可能な操作は、更新のあとに announceUndo を呼んでトーストを出す。
    */
-  const updateSession = (fn: (s: Session) => Session) => {
-    setUndo(null)
+  const updateSession = (fn: (s: Session) => Session, keepUndo = false) => {
+    if (!keepUndo) setUndo(null)
     setData(prev => {
       const cur = prev.sessions.find(s => s.date === today)
       if (!cur) return { ...prev, sessions: [...prev.sessions, fn({ id: uid(), date: today, entries: [] })] }
@@ -91,11 +91,11 @@ export default function Today({ data, setData }: ScreenProps) {
     })
   }
 
-  const updateEntry = (exerciseId: string, fn: (e: Entry) => Entry) =>
-    updateSession(s => ({ ...s, entries: s.entries.map(e => (e.exerciseId === exerciseId ? fn(e) : e)) }))
+  const updateEntry = (exerciseId: string, fn: (e: Entry) => Entry, keepUndo = false) =>
+    updateSession(s => ({ ...s, entries: s.entries.map(e => (e.exerciseId === exerciseId ? fn(e) : e)) }), keepUndo)
 
-  const updateSetLog = (exerciseId: string, i: number, patch: Partial<SetLog>) =>
-    updateEntry(exerciseId, e => ({ ...e, sets: e.sets.map((s, j) => (j === i ? { ...s, ...patch } : s)) }))
+  const updateSetLog = (exerciseId: string, i: number, patch: Partial<SetLog>, keepUndo = false) =>
+    updateEntry(exerciseId, e => ({ ...e, sets: e.sets.map((s, j) => (j === i ? { ...s, ...patch } : s)) }), keepUndo)
 
   /** 今日の計画から新しい Entry を作る。exceptId の種目は「今日すでに組んだ量」から除く（入れ替え用） */
   const buildEntry = (ex: Exercise, appData: AppData, exceptId?: string): Entry => {
@@ -168,6 +168,11 @@ export default function Today({ data, setData }: ScreenProps) {
       setLastDone({ exerciseId: ex.id, index: i })
       // この完了で種目が終わるなら、振り返りのために開いておく。ほかの種目のセットを完了したら畳む
       setLinger(entry.sets.every((x, j) => j === i || x.done) ? ex.id : undefined)
+    } else if (lastDone && lastDone.exerciseId === ex.id && lastDone.index === i) {
+      // 直前に完了したセットの完了を取り消したら、そのセットの休憩タイマーも止める
+      setTimerRun(undefined)
+      setTimerStartedAt(undefined)
+      setLastDone(undefined)
     }
   }
 
@@ -220,7 +225,8 @@ export default function Today({ data, setData }: ScreenProps) {
     lastDone && lastDoneSet?.done
       ? {
           value: lastDoneSet.rir,
-          onPick: (r: number) => updateSetLog(lastDone.exerciseId, lastDone.index, { rir: lastDoneSet.rir === r ? undefined : r }),
+          // 余力の入力では、完了の取り消しトーストを消さない（取り消すと、入れた余力も完了前に戻る）
+          onPick: (r: number) => updateSetLog(lastDone.exerciseId, lastDone.index, { rir: lastDoneSet.rir === r ? undefined : r }, true),
         }
       : undefined
 

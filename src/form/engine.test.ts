@@ -503,6 +503,49 @@ describe('下ろす・上げる秒数の計測（余弦状の動き）', () => {
     run(t, frames.slice(0, cut + 1), (f) => squatPose(f.angle, 20))
     expect(t.flush()).toHaveLength(1)
   })
+  it('2回目を 165°（開始 170°）で止めたあと、姿勢なしのコマが続いても時間切れで確定して2回になる', () => {
+    const t = new RepTracker('squat')
+    const first = cosinePath({ top: 170, bottom: 80, downSec: 1.3, upSec: 1.3 })
+    run(t, first, (f) => squatPose(f.angle, 20))
+    let now = first[first.length - 1].t
+    // 2回目：170 → 80 → 165 で止める
+    const frames = cosinePath({ top: 170, bottom: 80, downSec: 1.3, upSec: 1.3 })
+    for (const f of frames) {
+      if (f.t === 0 && frames.indexOf(f) === 0) continue
+      const a = f.angle > 165 && f.t > 1500 ? 165 : f.angle
+      t.push(squatPose(a, 20), now + f.t)
+    }
+    now += frames[frames.length - 1].t
+    for (let i = 0; i < 90; i++) {
+      now += 33
+      t.push(undefined, now)
+    }
+    expect(t.flush()).toHaveLength(2)
+    // 見えないコマのあいだに確定している（flush 前に reps へ入っている）
+    const t2 = new RepTracker('squat')
+    run(t2, first, (f) => squatPose(f.angle, 20))
+    let n2 = first[first.length - 1].t
+    for (const f of frames.slice(1)) t2.push(squatPose(f.angle > 165 && f.t > 1500 ? 165 : f.angle, 20), n2 + f.t)
+    n2 += frames[frames.length - 1].t
+    let last = t2.push(undefined, n2 + 33)
+    for (let i = 2; i < 90; i++) last = t2.push(undefined, n2 + 33 * i)
+    expect(last.reps).toHaveLength(2)
+  })
+})
+
+describe('側が入れ替わる種目（カール）の最下点', () => {
+  it('肘 80° 未満のコマだけ右側が見えても、最小角は本来の値に近く、fast-down は付かない', () => {
+    const t = new RepTracker('curl')
+    const frames = cosinePath({ top: 160, bottom: 50, downSec: 1.3, upSec: 1.3 })
+    const { last } = run(t, frames, (f) => {
+      const pose = curlPose(f.angle, 0, 0)
+      const rightOnly = f.angle < 80
+      return setVisibility(setVisibility(combineSides(pose, pose), 'left', rightOnly ? 0.2 : 0.9), 'right', rightOnly ? 0.9 : 0.3)
+    })
+    expect(last.reps).toHaveLength(1)
+    expect(last.reps[0].minAngle).toBeLessThan(56)
+    expect(issueCodes(last.reps[0])).not.toContain('fast-down')
+  })
 })
 
 describe('ライブ撮影：同じコマを何度も入れない', () => {

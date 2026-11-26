@@ -2,9 +2,7 @@ import { useState } from 'react'
 import type { Condition, Entry, ScreenProps, Session } from '../types'
 import { achieved, bestE1rm, doneSets } from '../logic'
 import OverflowMenu from '../components/OverflowMenu'
-import UndoToast from '../components/UndoToast'
 import { isPersonalBest } from '../components/analysisView'
-import { restoreSession } from '../components/todayLogic'
 import './History.css'
 
 const PAGE = 50
@@ -48,11 +46,14 @@ function setsText(entry: Entry): string {
 const hasRecord = (s: Session) =>
   s.entries.some(e => doneSets(e).length > 0) || (s.note ?? '').trim() !== ''
 
-export default function History({ data, setData }: ScreenProps) {
+interface HistoryProps extends ScreenProps {
+  /** 削除した記録を App に渡す（元に戻すトーストは、タブを移っても出せるよう App が持つ）。message は1件だけのときの表示 */
+  onDeleted?: (session: Session, message: string) => void
+}
+
+export default function History({ data, setData, onDeleted }: HistoryProps) {
   const [open, setOpen] = useState<Set<string>>(new Set())
   const [limit, setLimit] = useState(PAGE)
-  // 削除した記録を5秒間だけ取り消せるように覚えておく
-  const [deleted, setDeleted] = useState<{ session: Session; message: string } | null>(null)
 
   const exById = new Map(data.exercises.map(e => [e.id, e]))
   const sessions = data.sessions
@@ -71,7 +72,7 @@ export default function History({ data, setData }: ScreenProps) {
   // 取り消せるので確認ダイアログは出さない（手順を減らす）
   const remove = (s: Session) => {
     setData(prev => ({ ...prev, sessions: prev.sessions.filter(x => x.id !== s.id) }))
-    setDeleted({ session: s, message: `${dateLabel(s.date).replace(/（.）$/, '')}の記録を削除しました` })
+    onDeleted?.(s, `${dateLabel(s.date).replace(/（.）$/, '')}の記録を削除しました`)
   }
 
   return (
@@ -187,18 +188,6 @@ export default function History({ data, setData }: ScreenProps) {
 
       {sessions.length > limit && (
         <button className="btn hist-more" onClick={() => setLimit(n => n + PAGE)}>さらに表示</button>
-      )}
-
-      {deleted && (
-        <UndoToast
-          message={deleted.message}
-          onUndo={() => {
-            const snap = deleted.session
-            setData(prev => restoreSession(prev, snap))
-            setDeleted(null)
-          }}
-          onExpire={() => setDeleted(null)}
-        />
       )}
     </section>
   )
