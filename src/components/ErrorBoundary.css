@@ -1,0 +1,3 @@
+.error-fallback { background: var(--bad-weak); }
+.error-fallback .btn { width: 100%; }
+.error-fallback-msg { margin: 0; color: var(--bad-text); font-weight: 600; overflow-wrap: anywhere; }

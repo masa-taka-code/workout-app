@@ -56,10 +56,10 @@
 .stepper-unit { flex: none; width: 28px; color: var(--muted); font-size: 14px; }
 
 .setrow-help { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
-.setrow-rir { display: flex; gap: 8px; }
+.setrow-rir { display: flex; gap: 4px; }
 .setrow-rirbtn {
   flex: 1 1 0;
-  min-width: 0;
+  min-width: 44px;
   height: 48px;
   padding: 0;
   border: 1px solid var(--border-strong);

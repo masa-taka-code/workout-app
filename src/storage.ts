@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { AppData, Entry, Exercise, Muscle, Session, SetLog } from './types'
+import { MUSCLES } from './types'
+import { WEEKLY_MAX, WEEKLY_MIN } from './logic'
 
 const KEY = 'workout-app:data'
 
@@ -31,15 +33,38 @@ export const defaultData = (): AppData => ({
   weeklyTargets: {},
 })
 
-/** 古い形式の種目（targetRir・筋肉の指定なし）を補う */
+const isMuscle = (v: unknown): v is Muscle => typeof v === 'string' && (MUSCLES as string[]).includes(v)
+const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+
+/** 古い形式・壊れた形式の種目を補う。壊れた値は既定値に戻す */
 function normalizeExercise(e: Partial<Exercise> & { id: string; name: string }): Exercise {
   const fallbackMuscle: Record<string, Muscle> = { 胸: '胸', 背中: '背中', 脚: '大腿四頭筋', 肩: '肩前部', 腕: '上腕二頭筋', 腹: '腹筋' }
-  return {
-    part: 'その他', repMin: 8, repMax: 12, increment: 2.5, sets: 3, targetRir: 2,
-    primary: e.part && fallbackMuscle[e.part] ? [fallbackMuscle[e.part]] : [],
-    secondary: [],
-    ...e,
+  const raw: Record<string, unknown> = e
+  const part = typeof e.part === 'string' ? e.part : 'その他'
+  const muscles = (v: unknown): Muscle[] => (Array.isArray(v) ? v.filter(isMuscle) : [])
+  let primary = muscles(raw.primary)
+  if (primary.length === 0) primary = fallbackMuscle[part] ? [fallbackMuscle[part]] : []
+  const sets = isNum(raw.sets) && Number.isInteger(raw.sets) && raw.sets >= 1 ? raw.sets : 3
+  let repMin = isNum(raw.repMin) && raw.repMin >= 1 ? raw.repMin : 8
+  let repMax = isNum(raw.repMax) && raw.repMax >= 1 ? raw.repMax : 12
+  if (repMin > repMax) {
+    repMin = 8
+    repMax = 12
   }
+  const increment = isNum(raw.increment) && raw.increment > 0 ? raw.increment : 2.5
+  const targetRir = isNum(raw.targetRir) && raw.targetRir >= 0 ? raw.targetRir : 2
+  return { ...e, part, repMin, repMax, sets, increment, targetRir, primary, secondary: muscles(raw.secondary) } as Exercise
+}
+
+/** 週目標を整える。有限な数値だけ残し 10〜20 に収める。未知の筋肉は捨てる（文字列は数値にしない） */
+function normalizeWeeklyTargets(v: unknown): AppData['weeklyTargets'] {
+  const out: AppData['weeklyTargets'] = {}
+  if (!isObj(v)) return out
+  for (const m of MUSCLES) {
+    const n = v[m]
+    if (isNum(n)) out[m] = Math.min(WEEKLY_MAX, Math.max(WEEKLY_MIN, n))
+  }
+  return out
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -77,8 +102,17 @@ export function normalizeData(parsed: unknown): AppData | undefined {
   const exercises = (parsed.exercises as unknown[])
     .filter((e): e is Partial<Exercise> & { id: string; name: string } => isObj(e) && typeof e.id === 'string' && typeof e.name === 'string')
     .map(normalizeExercise)
-  const sessions = (parsed.sessions as unknown[]).map(normalizeSession).filter((x): x is Session => x !== undefined)
-  const weeklyTargets: AppData['weeklyTargets'] = isObj(parsed.weeklyTargets) ? parsed.weeklyTargets : {}
+  const seen = new Set<string>()
+  const sessions = (parsed.sessions as unknown[])
+    .map(normalizeSession)
+    .filter((x): x is Session => x !== undefined)
+    .map(x => {
+      // id が無い・空・重複のときは新しい id を振る（最初のものは元の id のまま）
+      const id = typeof x.id === 'string' && x.id !== '' && !seen.has(x.id) ? x.id : uid()
+      seen.add(id)
+      return id === x.id ? x : { ...x, id }
+    })
+  const weeklyTargets = normalizeWeeklyTargets(parsed.weeklyTargets)
   return { ...defaultData(), ...parsed, exercises, sessions, weeklyTargets }
 }
 

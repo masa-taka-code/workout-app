@@ -9,6 +9,7 @@ import History from './screens/History'
 import Analysis from './screens/Analysis'
 import Exercises from './screens/Exercises'
 import Settings from './screens/Settings'
+import ErrorBoundary from './components/ErrorBoundary'
 
 const TABS = [
   { id: 'today', label: '記録', Screen: Today },
@@ -61,11 +62,20 @@ export default function App() {
     }
   }
 
+  // 同じタブで落ちた場合も作り直せるように、戻すたびに番号を変えて ErrorBoundary を新しくする
+  const [resetCount, setResetCount] = useState(0)
+  const resetToToday = () => {
+    select('today')
+    setResetCount(n => n + 1)
+  }
+
   const { Screen } = TABS.find(t => t.id === tab) ?? TABS[0]
 
   return (
     <>
-      <Screen data={data} setData={setData} />
+      <ErrorBoundary key={`${tab}-${resetCount}`} onReset={resetToToday}>
+        <Screen data={data} setData={setData} />
+      </ErrorBoundary>
       <nav className="tabbar" aria-label="メニュー">
         {TABS.map(t => (
           <button key={t.id} aria-current={tab === t.id ? 'page' : undefined} onClick={() => select(t.id)}>
