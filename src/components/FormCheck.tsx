@@ -7,6 +7,8 @@ import type {
 } from '../form/types'
 import { RepTracker, baselineFrom, setupGuide } from '../form/engine'
 import { analyzeSet, emphasisTargets } from '../form/analysis'
+import { FrameGate, frameTimeMs } from '../form/frames'
+import type { VideoFrameMeta } from '../form/frames'
 import { currentPoseModel, detectWithWorld, loadPoseLandmarker, resetPoseLandmarker } from '../form/pose'
 import { drawSkeleton } from '../form/draw'
 import { toAspectCorrected } from '../form/geometry'
@@ -139,6 +141,10 @@ export default function FormCheck({
   const cueTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const placementRef = useRef<{ shown: Placement; cand: Placement; since: number }>({ shown: 'hidden', cand: 'hidden', since: 0 })
   const lastFileTimeRef = useRef(-1)
+  /** ライブ：新しいコマだけを計測に入れる（同じ時刻を2回入れない） */
+  const liveGateRef = useRef(new FrameGate())
+  /** ライブ：requestVideoFrameCallback で受けた、まだ使っていない最新コマの情報 */
+  const pendingFrameRef = useRef<VideoFrameMeta | undefined>(undefined)
   const fileSetsRef = useRef<FileSet[]>([])
   const fileSetStartRef = useRef<number | undefined>(undefined)
   const endedAtRef = useRef<number | undefined>(undefined)
@@ -254,7 +260,7 @@ export default function FormCheck({
   function finishFile() {
     if (phaseRef.current !== 'analyzing') return
     const video = videoRef.current
-    pushFileSet(repsRef.current, (video?.currentTime ?? 0) * 1000)
+    pushFileSet(tracker.flush(), (video?.currentTime ?? 0) * 1000)
     const sets = fileSetsRef.current
     setFileSets(sets)
     if (sets.length === 1) {
@@ -283,6 +289,17 @@ export default function FormCheck({
     let raf = 0
     const root = rootRef.current
     const accent = root ? cssColor(root, '--accent', '#2563eb') : '#2563eb'
+    // 使える端末では、コマの時刻（mediaTime / captureTime）を計測に使う。使えない端末は performance.now()
+    const vfcVideo = videoRef.current
+    // カメラの切り替えなどで映像が新しくなると mediaTime が 0 からやり直すので、通したコマの時刻を忘れる
+    liveGateRef.current.reset()
+    let vfc = 0
+    const onVideoFrame = (_now: number, meta: VideoFrameMeta) => {
+      pendingFrameRef.current = meta
+      if (vfcVideo) vfc = vfcVideo.requestVideoFrameCallback(onVideoFrame)
+    }
+    const vfcActive = !!vfcVideo && typeof vfcVideo.requestVideoFrameCallback === 'function'
+    if (vfcVideo && vfcActive) vfc = vfcVideo.requestVideoFrameCallback(onVideoFrame)
     const tick = () => {
       raf = requestAnimationFrame(tick)
       const phaseNow = phaseRef.current
@@ -301,7 +318,11 @@ export default function FormCheck({
         setAspect(video.videoWidth / video.videoHeight)
       }
       const perf = performance.now()
-      const { pose, world } = detectWithWorld(lm, video, perf)
+      const { pose, world, fresh } = detectWithWorld(lm, video, perf)
+      // ライブ：コマの時刻。新しいコマの通知（pending）を受けていれば、その時刻を計測に使う
+      const meta = pendingFrameRef.current
+      pendingFrameRef.current = undefined
+      const frameT = isFile ? video.currentTime * 1000 : frameTimeMs(meta, perf)
       // 推定が遅い端末では pose.ts が lite に切り替える。読み込み直して差し替える（その間はフレーム処理を止める）
       if (currentPoseModel() !== loadedModelRef.current) {
         swappingRef.current = true
@@ -325,7 +346,10 @@ export default function FormCheck({
       }
       // 撮影中・解析中は人体図を出さない
       canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height)
-      const frame = tracker.push(corrected, t, world)
+      // ライブは新しいコマのときだけ計算に入れる（画面更新がカメラより速くても同じ姿勢を何度も入れない）
+      // （コマの時刻が使える端末では、時間軸をそろえるため、通知を受けたコマだけを使う）
+      if (!isFile && !(fresh && (!vfcActive || meta !== undefined) && liveGateRef.current.accept(frameT))) return
+      const frame = tracker.push(corrected, isFile ? t : frameT, world)
       stepMeasuring(frame.reps, frame.visible, t, isFile)
       if (!isFile) stepChip(judgePlacement(formKey, corrected, world), t)
       if (isFile && video.duration > 0) {
@@ -404,7 +428,10 @@ export default function FormCheck({
     }
 
     raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
+    return () => {
+      cancelAnimationFrame(raf)
+      if (vfcVideo && vfc && typeof vfcVideo.cancelVideoFrameCallback === 'function') vfcVideo.cancelVideoFrameCallback(vfc)
+    }
     // beginMeasuring / finishLive / resetCounting は ref と set 関数だけを使う
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelReady, mediaReady, facing, tracker, formKey, history, voice, showCue])
@@ -412,6 +439,7 @@ export default function FormCheck({
   /** 数え直しの準備（新しいセットの前） */
   function resetCounting() {
     tracker.reset()
+    liveGateRef.current.reset()
     repsRef.current = []
     cuedRef.current = false
     endStateRef.current = initialAutoEnd
@@ -431,7 +459,9 @@ export default function FormCheck({
   /** ライブ撮影のセットを終える（自動・手動とも） */
   function finishLive() {
     if (phaseRef.current !== 'measuring') return
-    const reps = repsRef.current
+    // 伸びきりに戻るのを待っている最中のレップがあれば確定する
+    const reps = tracker.flush()
+    repsRef.current = reps
     endedAtRef.current = Date.now()
     voice.say(reps.length > 0 ? `終了。${reps.length}回` : '終了')
     setFromFile(false)

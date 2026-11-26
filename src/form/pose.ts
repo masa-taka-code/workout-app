@@ -80,12 +80,15 @@ function recordDuration(ms: number): void {
   }
 }
 
-/** 1フレーム推定して、画像座標の姿勢と world（メートル）の姿勢を返す。映像が進んでいなければ前回の結果を返す */
+/**
+ * 1フレーム推定して、画像座標の姿勢と world（メートル）の姿勢を返す。
+ * 映像が進んでいなければ前回の結果を返し、fresh を false にする（新しいコマのときだけ true）。
+ */
 export function detectWithWorld(
   landmarker: PoseLandmarker, video: HTMLVideoElement, timeMs: number,
-): { pose: Pose | undefined; world: Pose | undefined } {
-  if (video.readyState < 2 || video.videoWidth === 0) return { pose: undefined, world: undefined }
-  if (video.currentTime === lastVideoTime) return { pose: lastPose, world: lastWorld }
+): { pose: Pose | undefined; world: Pose | undefined; fresh: boolean } {
+  if (video.readyState < 2 || video.videoWidth === 0) return { pose: undefined, world: undefined, fresh: false }
+  if (video.currentTime === lastVideoTime) return { pose: lastPose, world: lastWorld, fresh: false }
   lastVideoTime = video.currentTime
   const t0 = performance.now()
   try {
@@ -97,7 +100,7 @@ export function detectWithWorld(
     lastWorld = undefined
   }
   recordDuration(performance.now() - t0)
-  return { pose: lastPose, world: lastWorld }
+  return { pose: lastPose, world: lastWorld, fresh: true }
 }
 
 /** 1フレーム推定する（画像座標のみ）。映像が進んでいなければ前回の結果を返す */

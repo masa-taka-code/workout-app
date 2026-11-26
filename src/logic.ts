@@ -21,9 +21,27 @@ export const RAMP_RATE = 0.8
 /** 同上の週数（アプリの設計値・暫定） */
 export const RAMP_WEEKS = 3
 
+// 停滞（2回未達）でデロードする前に、推定1RMの傾向が伸びていないか確かめる（以下はすべてアプリの設計値・暫定）
+/** 傾向を見る直近の週数（アプリの設計値・暫定） */
+export const TREND_WEEKS = 4
+/** 傾向の判定に必要な記録の回数（アプリの設計値・暫定） */
+export const TREND_MIN_SESSIONS = 6
+/** 「伸びている」とみなす推定1RMの傾き（%/週）（アプリの設計値・暫定） */
+export const TREND_MIN_SLOPE = 0.5
+/**
+ * 傾向に使うセットの reps + RIR の上限（アプリの設計値・暫定）。
+ * Reynolds 2006 は線形の式を10回までとしているが、器具が異なるので12に丸めた設計値
+ */
+export const TREND_MAX_REPS = 12
+
+export interface E1rmTrend { slopePctPerWeek: number; points: number }
+
 // ---------- 基本計算 ----------
 
-/** RIR で補正した推定 1RM（Epley 式）: w × (1 + (reps + RIR) / 30) */
+/**
+ * RIR で補正した推定 1RM（Epley 式）: w × (1 + (reps + RIR) / 30)
+ * 10回を超えると誤差が大きい（Reynolds 2006, 抄録）。停滞判定では TREND_MAX_REPS 以下のセットだけを使う
+ */
 export function e1rm(weight: number, reps: number, rir = 0): number {
   if (weight <= 0 || reps <= 0) return 0
   return weight * (1 + (reps + Math.max(0, rir)) / 30)
@@ -73,6 +91,16 @@ export function addDays(date: string, days: number): string {
   return fmt(d)
 }
 
+/** 2つの日付 (YYYY-MM-DD) の日数差（b − a）。夏時間などの影響を丸めで吸収する */
+const daysBetween = (a: string, b: string): number =>
+  Math.round((toDate(b).getTime() - toDate(a).getTime()) / 86_400_000)
+
+const median = (xs: number[]): number => {
+  const v = [...xs].sort((a, b) => a - b)
+  const m = Math.floor(v.length / 2)
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2
+}
+
 // ---------- 履歴 ----------
 
 /** 指定日より前のその種目の記録（新しい順、完了セットがあるものだけ） */
@@ -83,10 +111,39 @@ export function historyFor(exerciseId: string, sessions: Session[], before: stri
     .flatMap(s => s.entries.filter(e => e.exerciseId === exerciseId && doneSets(e).length > 0))
 }
 
+/**
+ * 直近 TREND_WEEKS 週の推定1RMの傾向（%/週）。記録が足りなければ undefined。
+ * 高回数セット（reps + RIR > TREND_MAX_REPS）とデロード回は除く。Theil-Sen 推定（全ペアの傾きの中央値）で外れ値に強くする
+ */
+export function e1rmTrend(exerciseId: string, ex: Exercise, sessions: Session[], today: string): E1rmTrend | undefined {
+  const from = addDays(today, -TREND_WEEKS * 7)
+  const byDay = new Map<string, number>()
+  for (const se of sessions) {
+    if (se.date >= today || se.date < from) continue
+    for (const en of se.entries) {
+      if (en.exerciseId !== exerciseId || en.target?.kind === 'deload') continue
+      const vals = doneSets(en)
+        .filter(x => x.reps + (x.amrap ? 0 : Math.max(0, rirOf(x, ex))) <= TREND_MAX_REPS)
+        .map(x => e1rm(x.weight, x.reps, x.amrap ? 0 : rirOf(x, ex)))
+      if (vals.length === 0) continue
+      byDay.set(se.date, Math.max(byDay.get(se.date) ?? 0, ...vals))
+    }
+  }
+  const pts = [...byDay.entries()].map(([d, y]) => ({ x: daysBetween(from, d), y }))
+  if (pts.length < TREND_MIN_SESSIONS) return undefined
+  const slopes: number[] = []
+  for (let i = 0; i < pts.length; i++) {
+    for (let j = i + 1; j < pts.length; j++) slopes.push((pts[j].y - pts[i].y) / (pts[j].x - pts[i].x))
+  }
+  const base = median(pts.map(p => p.y))
+  if (base <= 0) return undefined
+  return { slopePctPerWeek: (median(slopes) * 7) / base * 100, points: pts.length }
+}
+
 // ---------- 1. 種目ごとの目標 ----------
 
 /** 前回の記録から今日の重量・レップを決める（セット数は種目の標準値） */
-export function suggestTarget(ex: Exercise, history: Entry[], bias = 0): Target {
+export function suggestTarget(ex: Exercise, history: Entry[], bias = 0, trend?: E1rmTrend): Target {
   const base = { sets: ex.sets, rir: ex.targetRir }
   const last = history[0]
   if (!last) {
@@ -128,11 +185,13 @@ export function suggestTarget(ex: Exercise, history: Entry[], bias = 0): Target 
   }
 
   const missedTwice = history.length >= 2 && history.slice(0, 2).every(e => achieved(e) === false && e.target?.kind !== 'deload')
-  if (missedTwice) {
+  const growing = !!trend && trend.slopePctPerWeek >= TREND_MIN_SLOPE
+  const pct = trend ? trend.slopePctPerWeek.toFixed(1) : ''
+  if (missedTwice && !growing) {
     return {
       // −10%・−1セットは論文の値ではなくアプリの設計値。「停滞時だけ」の方針は Coleman 2024（定期的な休みで筋肥大の上乗せなし）
       ...base, kind: 'deload', sets: Math.max(1, ex.sets - 1), weight: roundTo(topWeight * 0.9, ex.increment), reps: ex.repMin,
-      reason: '2回連続で目標未達。今回だけ重量−10%・セット−1で回復を優先',
+      reason: `2回連続で目標未達。今回だけ重量−10%・セット−1で回復を優先${trend ? `（直近${TREND_WEEKS}週の推定1RMの伸び：週${trend.slopePctPerWeek >= 0 ? '+' : ''}${pct}%）` : ''}`,
     }
   }
 
@@ -141,7 +200,7 @@ export function suggestTarget(ex: Exercise, history: Entry[], bias = 0): Target 
   const reps = Math.min(minReps + step, ex.repMax)
   return {
     ...base, kind: 'reps', weight: topWeight, reps,
-    reason: `同じ重量でレップを${minReps}→${reps}回に${step === 2 ? '（前回は余力2回以上）' : ''}`,
+    reason: `${missedTwice ? `2回未達だが直近${TREND_WEEKS}週の推定1RMは週+${pct}%で伸びているため、重量は据え置き。` : ''}同じ重量でレップを${minReps}→${reps}回に${step === 2 ? '（前回は余力2回以上）' : ''}`,
   }
 }
 
@@ -238,7 +297,7 @@ export function planExercise(
 ): Target {
   const history = historyFor(ex.id, data.sessions, today)
   const { bias } = rirBias(ex.id, data, today)
-  const target = suggestTarget(ex, history, bias)
+  const target = suggestTarget(ex, history, bias, e1rmTrend(ex.id, ex, data.sessions, today))
   const notes: string[] = []
   if (bias !== 0) {
     const n = Math.abs(bias)

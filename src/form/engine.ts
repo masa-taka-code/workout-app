@@ -16,6 +16,16 @@ import type { MeasureFrame, SetStats } from './measure'
 const MEDIAN_WINDOW = 3
 const SIDE_SWITCH_MARGIN = 0.1
 const START_DROP = 10
+/**
+ * 設計値・暫定：下ろす/上げる時間の計測の起点・終点を決める「伸びきり」の許容角度（度）。
+ * レップの開始・終了は、そのレップ直前の伸びきりの最大角度（topPeak）からこの角度以内に戻った最後/最初のフレームとする。
+ * 論文の値ではない。3° は角度推定のノイズ（中央値フィルタ後で 1〜2° 程度）より少し大きい値として仮置きした。
+ */
+const TOP_TOLERANCE = 3
+/** 時間計測の起点をさかのぼるための角度の履歴の長さ（ミリ秒）。設計値・暫定 */
+const HISTORY_MS = 3000
+/** 上の位置（top）を超えてから、伸びきりに戻るのを待つ最長時間（ミリ秒）。設計値・暫定 */
+const POST_WAIT_MS = 1000
 const MIN_MOTION = 30
 const MAX_REP_MS = 8000
 const CUE_MS = 2000
@@ -78,6 +88,8 @@ interface ActiveRep {
   frames: MeasureFrame[]
   /** 開始前に最も伸びていたフレーム */
   lead?: MeasureFrame
+  /** 上の位置（top）を超えたあと、伸びきりに戻るのを待っている間の状態 */
+  post?: { crossT: number; peak: number; peakT: number; peakFrame: MeasureFrame }
 }
 
 const round = (v: number, digits: number): number => {
@@ -103,6 +115,8 @@ export class RepTracker {
   private lastCue?: { text: string; t: number }
   /** 伸びた状態（top）でいちばん角度が大きかったフレーム */
   private leadFrame?: MeasureFrame
+  /** 直近 HISTORY_MS 分の（時刻, 主角度）。レップ開始の時刻をさかのぼって決めるのに使う */
+  private history: { t: number; a: number }[] = []
   private stats: SetStats = { segA: [], segB: [], worldLen: [], firstVelocities: [] }
 
   constructor(key: FormExerciseKey, baseline?: Baseline) {
@@ -142,6 +156,9 @@ export class RepTracker {
     if (frame.worldLen !== undefined) this.stats.worldLen.push(frame.worldLen)
     let liveCue: string | undefined
 
+    this.history.push({ t: timeMs, a })
+    while (this.history.length > 1 && timeMs - this.history[0].t > HISTORY_MS) this.history.shift()
+
     if (!this.rep) {
       if (a > cfg.top) {
         if (!this.armed || a > this.topPeak) this.leadFrame = frame
@@ -149,8 +166,9 @@ export class RepTracker {
         this.armed = true
         this.phase = 'top'
       } else if (this.armed && a < cfg.top - START_DROP) {
+        // 時間の計測は、伸びきり（topPeak − TOP_TOLERANCE 以上）だった最後のフレームから始める
         this.rep = {
-          startT: timeMs, minAngle: Infinity, minT: timeMs, startMax: this.topPeak, ranges: {},
+          startT: this.lookbackStart(this.topPeak - TOP_TOLERANCE, timeMs), minAngle: Infinity, minT: timeMs, startMax: this.topPeak, ranges: {},
           frames: [], lead: this.leadFrame,
         }
         this.prevAngle = a
@@ -168,12 +186,23 @@ export class RepTracker {
         this.phase = 'idle'
       } else {
         this.updateRep(rep, angles, a, timeMs, pts, frame)
-        if (a > cfg.top) {
-          this.finishRep(rep, a, timeMs)
-          this.rep = undefined
-          this.topPeak = a
-          this.leadFrame = frame
-          this.phase = 'top'
+        if (rep.post) {
+          if (a > rep.post.peak) rep.post = { ...rep.post, peak: a, peakT: timeMs, peakFrame: frame }
+        } else if (a > cfg.top) {
+          rep.post = { crossT: timeMs, peak: a, peakT: timeMs, peakFrame: frame }
+        }
+        const post = rep.post
+        if (post) {
+          // 伸びきり（topPeak − TOP_TOLERANCE）に戻った時点を終点にする。戻らないまま
+          // 折り返す・時間切れのときは、最も伸びた時点を終点にする
+          const reached = a >= rep.startMax - TOP_TOLERANCE
+          const turned = a < post.peak - TOP_TOLERANCE
+          const timeout = timeMs - post.crossT >= POST_WAIT_MS
+          if (reached || turned || timeout) {
+            this.completeRep(rep, reached ? timeMs : post.peakT, timeMs)
+          } else {
+            this.phase = 'top'
+          }
         } else {
           const prev = this.prevAngle ?? a
           if (a > rep.minAngle + 3) this.phase = 'up'
@@ -188,7 +217,37 @@ export class RepTracker {
     return this.result(true, angles, timeMs, liveCue)
   }
 
+  /**
+   * 計測を終えるときに呼ぶ。伸びきりに戻るのを待っている最中のレップがあれば、最も伸びた時点を終点に確定する。
+   * 返す値は push と同じ形（直近の状態）。
+   */
+  flush(): RepResult[] {
+    const rep = this.rep
+    if (rep?.post) this.completeRep(rep, rep.post.peakT, rep.post.peakT)
+    return [...this.reps]
+  }
+
+  /** 上の位置を超えたレップを確定する。endT は時間計測の終点、nowT は確定した時刻（cue の表示開始） */
+  private completeRep(rep: ActiveRep, endT: number, nowT: number) {
+    const post = rep.post
+    if (!post) return
+    this.finishRep(rep, post.peak, endT, nowT)
+    this.rep = undefined
+    this.topPeak = post.peak
+    this.leadFrame = post.peakFrame
+    this.phase = 'top'
+  }
+
+  /** 履歴をさかのぼり、角度が target 以上だった最後のフレームの時刻を返す。無ければ履歴の最古の時刻 */
+  private lookbackStart(target: number, fallbackT: number): number {
+    for (let i = this.history.length - 1; i >= 0; i--) {
+      if (this.history[i].a >= target) return this.history[i].t
+    }
+    return this.history[0]?.t ?? fallbackT
+  }
+
   reset(): void {
+    this.history = []
     this.recent = {}
     this.side = undefined
     this.armed = false
@@ -282,18 +341,16 @@ export class RepTracker {
     }
   }
 
-  private finishRep(rep: ActiveRep, endAngle: number, t: number) {
+  /** endAngle は伸びきり側の最大角度、endT は時間計測の終点、t は確定した時刻 */
+  private finishRep(rep: ActiveRep, endAngle: number, endT: number, t: number) {
     const cfg = CONFIG[this.key]
     if (rep.minAngle > cfg.top - MIN_MOTION) return // ほとんど動いていない
 
     const maxAngle = Math.max(rep.startMax, endAngle)
     const romDeg = maxAngle - rep.minAngle
     const first = (rep.minT - rep.startT) / 1000
-    // 後半はレップ判定の top を超えた時点で打ち切られる。top より上（伸ばしきり）までの分は
-    // 角度の比率で引き延ばして推定する（curl は top 130° で、伸ばしきりの 150〜170° まで測れないため）
-    const measured = cfg.top - rep.minAngle
-    const stretch = measured > 0 ? Math.max(1, (Math.max(rep.startMax, endAngle) - rep.minAngle) / measured) : 1
-    const second = ((t - rep.minT) / 1000) * stretch
+    // 時間は、伸びきり（topPeak − TOP_TOLERANCE）から最下点まで、最下点から伸びきりまで
+    const second = (endT - rep.minT) / 1000
     const eccentricSec = round(cfg.eccentricFirst ? first : second, 2)
     const concentricSec = round(cfg.eccentricFirst ? second : first, 2)
 
@@ -331,7 +388,7 @@ export class RepTracker {
       issues,
     }
     const meas = measureRep(
-      this.key, rep.frames, { startT: rep.startT, minT: rep.minT, endT: t }, this.stats, rep.lead,
+      this.key, rep.frames, { startT: rep.startT, minT: rep.minT, endT }, this.stats, rep.lead,
     )
     result.metrics = meas.metrics
     // 速度低下の基準は最初の2レップ。バー軌道の基準は1レップ目

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Exercise } from '../types'
+import { FrameGate, frameTimeMs } from './frames'
 import { RepTracker, baselineFrom, formKeyFor, setupGuide, summarizeSet } from './engine'
 import { jointAngle, tiltFromVertical } from './geometry'
 import {
@@ -433,5 +434,111 @@ describe('baselineFrom', () => {
     expect(baselineFrom(base)).toEqual({ romDeg: 90, minAngle: 80, maxAngle: 170 })
     expect(baselineFrom({ ...base, metrics: { confidence: 1, view: 'side', viewOk: 'ok', trunkLeanMax: 42 } }))
       .toEqual({ romDeg: 90, minAngle: 80, maxAngle: 170, trunkLeanMax: 42 })
+  })
+})
+
+/** 余弦状の速度の動き（伸びきりの近くほどゆっくり）。下ろす・上げるの真の秒数を指定する */
+function cosinePath(o: { top: number; bottom: number; downSec: number; upSec: number; fps?: number }): PathFrame[] {
+  const dt = 1000 / (o.fps ?? 30)
+  const out: PathFrame[] = []
+  let t = 1000
+  const push = (angle: number) => {
+    out.push({ t, angle, progress: Math.min(1, Math.max(0, (o.top - angle) / (o.top - o.bottom))) })
+    t += dt
+  }
+  const hold = (sec: number, angle: number) => {
+    for (let i = 0; i < Math.round(sec * 30); i++) push(angle)
+  }
+  const move = (from: number, to: number, sec: number) => {
+    const n = Math.round(sec * 30)
+    for (let i = 1; i <= n; i++) push(from + ((to - from) * (1 - Math.cos((Math.PI * i) / n))) / 2)
+  }
+  hold(0.7, o.top)
+  move(o.top, o.bottom, o.downSec)
+  move(o.bottom, o.top, o.upSec)
+  hold(0.7, o.top)
+  return out
+}
+
+/**
+ * 余弦状の動きで、伸びきりから TOP_TOLERANCE（3°）以内にいる時間。計測は topPeak − 3° を切った時点から始まるので、
+ * 真の秒数からこの分だけ短く出るのが仕様どおり（range は動きの全角度幅）。
+ */
+const toleranceLoss = (sec: number, range: number) => (sec / Math.PI) * Math.acos(1 - (2 * 3) / range)
+
+describe('下ろす・上げる秒数の計測（余弦状の動き）', () => {
+  const cases: [number, number][] = [[1.0, 1.0], [1.3, 1.3], [2.0, 1.5], [3.0, 1.2]]
+  it.each(cases)('スクワット：下ろす %f 秒・上げる %f 秒を ±0.1 秒で測る', (down, up) => {
+    const t = new RepTracker('squat')
+    const { last } = run(t, cosinePath({ top: 170, bottom: 80, downSec: down, upSec: up }), (f) => squatPose(f.angle, 20))
+    expect(last.reps).toHaveLength(1)
+    // 下ろす：伸びきり 3° 分だけ始まりが遅れる。上げる：終わりが 3° 手前で数える
+    expect(Math.abs(last.reps[0].eccentricSec - (down - toleranceLoss(down, 90)))).toBeLessThan(0.1)
+    expect(Math.abs(last.reps[0].concentricSec - (up - toleranceLoss(up, 90)))).toBeLessThan(0.1)
+    // 真の秒数との比は 0.85〜1（変更前は約 0.67）
+    expect(last.reps[0].eccentricSec / down).toBeGreaterThan(0.85)
+    expect(last.reps[0].eccentricSec / down).toBeLessThanOrEqual(1)
+    expect(last.reps[0].concentricSec / up).toBeGreaterThan(0.85)
+  })
+  it('1.3 秒かけて余弦状に下ろしたスクワットで fast-down が出ない', () => {
+    const t = new RepTracker('squat')
+    const { last } = run(t, cosinePath({ top: 170, bottom: 80, downSec: 1.3, upSec: 1.3 }), (f) => squatPose(f.angle, 20))
+    expect(issueCodes(last.reps[0])).not.toContain('fast-down')
+  })
+  it.each(cases)('カール（向きが逆の種目）：上げる %f 秒・下ろす %f 秒を ±0.1 秒で測る', (lift, lower) => {
+    // カールは角度が減る側が「上げる」動作。top は 160°
+    const t = new RepTracker('curl')
+    const { last } = run(t, cosinePath({ top: 160, bottom: 50, downSec: lift, upSec: lower }), (f) => curlPose(f.angle, 0, 0))
+    expect(last.reps).toHaveLength(1)
+    expect(Math.abs(last.reps[0].concentricSec - (lift - toleranceLoss(lift, 110)))).toBeLessThan(0.1)
+    expect(Math.abs(last.reps[0].eccentricSec - (lower - toleranceLoss(lower, 110)))).toBeLessThan(0.1)
+    expect(last.reps[0].concentricSec / lift).toBeGreaterThan(0.85)
+    expect(last.reps[0].eccentricSec / lower).toBeGreaterThan(0.85)
+  })
+  it('動画の最後で伸びきりに戻る途中でも flush で確定でき、レップが消えない', () => {
+    const t = new RepTracker('squat')
+    const frames = cosinePath({ top: 170, bottom: 80, downSec: 1.3, upSec: 1.3 })
+    // 上の位置（160°）を超えた直後でフレームを打ち切る
+    const cut = frames.findIndex((f, i) => i > 60 && f.angle > 161)
+    run(t, frames.slice(0, cut + 1), (f) => squatPose(f.angle, 20))
+    expect(t.flush()).toHaveLength(1)
+  })
+})
+
+describe('ライブ撮影：同じコマを何度も入れない', () => {
+  it('FrameGate は同じ時刻・過去の時刻を捨て、進んだ時刻だけを通す', () => {
+    const g = new FrameGate()
+    expect([100, 100, 100, 100, 133, 133, 120, 166].map((v) => g.accept(v))).toEqual([
+      true, false, false, false, true, false, false, true,
+    ])
+    g.reset()
+    expect(g.accept(100)).toBe(true)
+  })
+  it('frameTimeMs は mediaTime（秒）→ captureTime（ミリ秒）→ 代わりの時刻の順に使う', () => {
+    expect(frameTimeMs({ mediaTime: 1.5, captureTime: 900 }, 5)).toBe(1500)
+    expect(frameTimeMs({ captureTime: 900 }, 5)).toBe(900)
+    expect(frameTimeMs({}, 5)).toBe(5)
+    expect(frameTimeMs(undefined, 5)).toBe(5)
+  })
+  it('同じコマを4回入れようとしても1回しか入らず、滑らかなレップにスティッキングポイントが出ない', () => {
+    const frames = cosinePath({ top: 170, bottom: 80, downSec: 1.5, upSec: 1.3 })
+    const once = new RepTracker('squat')
+    run(once, frames, (f) => squatPose(f.angle, 20))
+    const gated = new RepTracker('squat')
+    const gate = new FrameGate()
+    let pushed = 0
+    let last: FrameResult | undefined
+    for (const f of frames) {
+      // 画面更新（120Hz）がカメラ（30fps）より速い：同じコマが4回来る
+      for (let k = 0; k < 4; k++) {
+        if (!gate.accept(f.t)) continue
+        pushed++
+        last = gated.push(squatPose(f.angle, 20), f.t)
+      }
+    }
+    expect(pushed).toBe(frames.length)
+    expect(last?.reps).toHaveLength(1)
+    expect(last?.reps[0].metrics?.stickingAngle).toBeUndefined()
+    expect(last?.reps[0].eccentricSec).toBe(once.flush()[0].eccentricSec)
   })
 })

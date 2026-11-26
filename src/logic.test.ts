@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  achieved, achievementRate, adjustSetsForVolume, e1rm, planExercise, rampWeeklyTargets, roundTo, suggestTarget, volumeBetween, weekStart,
+  achieved, achievementRate, addDays, adjustSetsForVolume, e1rm, e1rmTrend, planExercise, rampWeeklyTargets, roundTo, suggestTarget, volumeBetween, weekStart,
 } from './logic'
 import type { AppData, Entry, Exercise, Session, SetLog } from './types'
 
@@ -231,5 +231,85 @@ describe('RIR の個人補正', () => {
     const past = [1, 2, 3].map(i => session(`2026-10-0${i}`, [entry([s(60, 8, 2), s(60, 8, 2), s(60, 8, 2)])]))
     const barbell: Exercise = { ...bench, equipment: 'barbell' }
     expect(planExercise(barbell, { ...data(past), exercises: [barbell] }, '2026-10-22').amrap).toBeUndefined()
+  })
+})
+
+describe('推定1RMの傾向（デロードの誤判定を減らす）', () => {
+  const TODAY = '2026-11-30'
+  const miss = { kind: 'reps' as const, weight: 60, reps: 9, sets: 3, rir: 2, reason: '' }
+  const missed = () => entry([s(60, 8, 1), s(60, 7, 0), s(60, 6, 0)], miss)
+  const dl = { kind: 'deload' as const, weight: 55, reps: 6, sets: 2, rir: 2, reason: '' }
+  // 今日の daysAgo 日前の日付
+  const ago = (n: number) => addDays(TODAY, -n)
+  // 4日おきに weights[i] kg × 5回（RIR 2）のセッションを作る（新しい日付ほど後ろ）
+  const series = (weights: number[], step = 4) =>
+    weights.map((w, i) => session(ago((weights.length - i) * step), [entry([s(w, 5, 2)])]))
+  const growing = [60, 60.5, 61, 61.5, 62, 62.5, 63] // 約 +3%/週
+  const flat = [60, 60, 60, 60, 60, 60, 60]
+
+  it('2回未達でも傾向が +1%/週 以上ならデロードしない', () => {
+    const t = suggestTarget(bench, [missed(), missed()], 0, { slopePctPerWeek: 1, points: 8 })
+    expect(t.kind).toBe('reps')
+    expect(t.weight).toBe(60)
+    expect(t.reason).toContain('2回未達だが直近4週の推定1RMは週+1.0%で伸びているため、重量は据え置き')
+  })
+  it('2回未達で傾向が 0 または負ならデロードする', () => {
+    for (const slope of [0, -1.2]) {
+      const t = suggestTarget(bench, [missed(), missed()], 0, { slopePctPerWeek: slope, points: 8 })
+      expect(t).toMatchObject({ kind: 'deload', weight: 55, sets: 2 })
+      expect(t.reason).toContain('直近4週の推定1RMの伸び')
+    }
+  })
+  it('傾向が undefined（データ不足）なら今のルールどおりデロード', () => {
+    expect(suggestTarget(bench, [missed(), missed()], 0, undefined).kind).toBe('deload')
+  })
+  it('記録が 6 回未満なら傾向は出ず、planExercise は今のルールどおりデロードする', () => {
+    // 伸びている 3 件 + 未達 2 件 = 5 件
+    const sessions = [...series([60, 61, 62]), session(ago(2), [missed()]), session(ago(1), [missed()])]
+    expect(e1rmTrend('bench', bench, sessions, TODAY)).toBeUndefined()
+    expect(planExercise(bench, data(sessions), TODAY).kind).toBe('deload')
+  })
+  it('記録が十分で伸びていれば planExercise はデロードしない', () => {
+    // 伸びている 6 件（重量 60→65kg）+ 未達 2 件。傾向は +0.5%/週 以上
+    const sessions = [...series([60, 61, 62, 63, 64, 65], 4).map((x, i) => ({ ...x, date: ago(24 - i * 4) })), session(ago(2), [missed()]), session(ago(1), [missed()])]
+    const tr = e1rmTrend('bench', bench, sessions, TODAY)
+    expect(tr!.slopePctPerWeek).toBeGreaterThanOrEqual(0.5)
+    expect(planExercise(bench, data(sessions), TODAY).kind).not.toBe('deload')
+  })
+  it('傾向の計算：伸びていれば正、横ばいなら 0', () => {
+    const up = e1rmTrend('bench', bench, series(growing), TODAY)
+    expect(up!.points).toBe(7)
+    expect(up!.slopePctPerWeek).toBeGreaterThan(1)
+    expect(e1rmTrend('bench', bench, series(flat), TODAY)!.slopePctPerWeek).toBeCloseTo(0, 5)
+  })
+  it('reps + RIR が 12 を超えるセットは傾向に使われない', () => {
+    // 10回 + RIR 2 = 12 は使う／11回 + RIR 2 = 13 は使わない
+    const ok = Array.from({ length: 6 }, (_, i) => session(ago(24 - i * 4), [entry([s(50, 10, 2)])]))
+    expect(e1rmTrend('bench', bench, ok, TODAY)!.points).toBe(6)
+    const high = Array.from({ length: 6 }, (_, i) => session(ago(24 - i * 4), [entry([s(50, 11, 2)])]))
+    expect(e1rmTrend('bench', bench, high, TODAY)).toBeUndefined()
+    // 高回数セットと通常セットが混ざる記録では通常セットだけが使われる
+    const mixed = Array.from({ length: 6 }, (_, i) => session(ago(24 - i * 4), [entry([s(40, 15, 2), s(60, 5, 2)])]))
+    expect(e1rmTrend('bench', bench, mixed, TODAY)!.slopePctPerWeek).toBeCloseTo(0, 5)
+  })
+  it('外れ値が1回あっても傾向が大きく崩れない（Theil-Sen）', () => {
+    const w = [60, 60.5, 61, 100, 62, 62.5, 63] // 4 番目だけ極端な外れ値
+    const tr = e1rmTrend('bench', bench, series(w), TODAY)!
+    expect(tr.slopePctPerWeek).toBeGreaterThan(1)
+    expect(tr.slopePctPerWeek).toBeLessThan(2)
+  })
+  it('デロード回の記録は点に含まれない', () => {
+    const sessions = [...series(growing.slice(0, 6)), session(ago(3), [entry([s(55, 5, 2)], dl)]), session(ago(2), [entry([s(55, 5, 2)], dl)])]
+    expect(e1rmTrend('bench', bench, sessions, TODAY)!.points).toBe(6)
+    expect(e1rmTrend('bench', bench, sessions.slice(0, 6), TODAY)!.points).toBe(6)
+  })
+  it('期間外（4週より前）の記録は使われない', () => {
+    const old = Array.from({ length: 6 }, (_, i) => session(ago(40 + i * 3), [entry([s(60, 5, 2)])]))
+    expect(e1rmTrend('bench', bench, old, TODAY)).toBeUndefined()
+    const recent = series(flat).slice(0, 6) // 6 件（最古 ago(28) まで含まれる）
+    expect(e1rmTrend('bench', bench, [...old, ...recent], TODAY)!.points).toBe(6)
+  })
+  it('今日以降の記録は使われない', () => {
+    expect(e1rmTrend('bench', bench, [...series(flat).slice(0, 5), session(TODAY, [entry([s(60, 5, 2)])])], TODAY)).toBeUndefined()
   })
 })
