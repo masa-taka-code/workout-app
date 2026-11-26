@@ -3,8 +3,19 @@
   --bg: #f1f3f6;
   --surface: #ffffff;
   --surface-2: #e9ecf1;
+  /* 固定バー・トースト・…メニューの面（ダークだけ一段明るい） */
+  --surface-3: #ffffff;
   --text: #14171c;
   --muted: #545c6a;
+  /* 固定バーの上の補足文字 */
+  --muted-bar: #545c6a;
+  /* 押せるボタンの面・押下・固定バーの中のボタンの面・入力欄の面（ダークは押せる面＝明るい、入力＝くぼみ） */
+  --control-bg: #ffffff;
+  --control-bg-bar: #ffffff;
+  --control-press: #e9ecf1;
+  --input-bg: #ffffff;
+  /* 遠くから読む小さい文字・−/＋の太さ（ダークだけ太くする） */
+  --fw-read: 400;
   /* 区切り線（飾り専用。部品の枠には --control-border を使う） */
   --border: #d5d9e0;
   --control-border: #7c8492;
@@ -15,9 +26,19 @@
   --accent-pressed: #1e40af;
   --accent-weak: #e5edff;
   --accent-text: #1e40af;
+  /* グラフ・筋肉マップの色 */
+  --data: #1d4ed8;
+  --map-body: #d5d9e0;
+  --map-min: 25;
+  /* 筋肉のバー（達成・不足） */
+  --bar-good: #15803d;
+  --bar-warn: #b45309;
   /* 選んだ（調子・RIR・チップ・設定の選択肢） */
   --select-bg: #2b313b;
   --on-select: #ffffff;
+  --select-border: #2b313b;
+  /* 選んだものの枠：ダークだけ明るい枠を inset の影で足す（ライトは何も足さない） */
+  --select-ring: inset 0 0 0 0 transparent;
   /* 終わった・達成 */
   --good-solid: #15803d;
   --on-good: #ffffff;
@@ -73,43 +94,58 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0e1014;
-    --surface: #191c22;
-    --surface-2: #232730;
-    --text: #eceef2;
-    --muted: #a3aab6;
-    --border: #323843;
-    --control-border: #6f7785;
-    --border-strong: #6f7785;
-    --accent: #7aa7ff;
-    --on-accent: #0b1220;
-    --accent-pressed: #a9c5ff;
-    --accent-weak: #1b2a48;
-    --accent-text: #a9c5ff;
-    --select-bg: #e3e6eb;
-    --on-select: #0e1014;
-    --good-solid: #34c76f;
-    --on-good: #06240f;
-    --good: #34c76f;
-    --good-weak: #12301e;
-    --good-text: #7ee2a4;
-    --warn: #fbbf24;
-    --warn-weak: #33280f;
-    --warn-text: #fcd34d;
-    --bad: #f87171;
-    --on-bad: #1a0505;
-    --bad-weak: #3a1717;
-    --bad-text: #fca5a5;
-    --pr: #facc15;
-    --pr-weak: #2e2709;
-    --pr-text: #fde68a;
-    --info: #22d3ee;
-    --info-weak: #0c2a33;
-    --info-text: #a5f3fc;
+    /* 面は4段：背景 < カード < 内側の面 < 固定バー（影は見えないので、明るさと枠で高さを表す） */
+    --bg: #0e1013;
+    --surface: #1d2129;
+    --surface-2: #2b313c;
+    --surface-3: #383f4c;
+    --text: #edf0f4;
+    --muted: #bcc3ce;
+    --muted-bar: #d0d6df;
+    --border: #3d4450;
+    --control-border: #828b9b;
+    --border-strong: #828b9b;
+    --control-bg: #363d4a;
+    --control-bg-bar: #414958;
+    --control-press: #4c5565;
+    --input-bg: #0e1013;
+    --fw-read: 600;
+    --accent: #6099ff;
+    --on-accent: #050c1a;
+    --accent-pressed: #4585f5;
+    --accent-weak: #1e2d4b;
+    --accent-text: #b3ccff;
+    --data: #7fb0ff;
+    --map-body: #383f4c;
+    --map-min: 40;
+    --bar-good: #4ccf84;
+    --bar-warn: #c97618;
+    --select-bg: #465062;
+    --on-select: #f3f5f8;
+    --select-border: #dfe4ec;
+    --select-ring: inset 0 0 0 1px #dfe4ec;
+    --good-solid: #34b86a;
+    --on-good: #03170a;
+    --good: #34b86a;
+    --good-weak: #15321f;
+    --good-text: #8ce3ad;
+    --warn: #e8aa3c;
+    --warn-weak: #372a10;
+    --warn-text: #f4c46a;
+    --bad: #f07b7b;
+    --on-bad: #1a0606;
+    --bad-weak: #3f1d20;
+    --bad-text: #f7acac;
+    --pr: #e6bb3a;
+    --pr-weak: #352a0f;
+    --pr-text: #f5d983;
+    --info: #3fc3d6;
+    --info-weak: #12323c;
+    --info-text: #a3e5f0;
     --card-edge: var(--border);
     --card-shadow: none;
-    --float-shadow: 0 4px 12px rgb(0 0 0 / 0.5);
-    --shadow-timer: 0 -4px 12px rgb(0 0 0 / 0.5);
+    --float-shadow: none;
+    --shadow-timer: none;
   }
 }
 
@@ -170,17 +206,17 @@ button, input, select, textarea {
   padding: 0 12px;
   border: 1px solid var(--control-border);
   border-radius: 8px;
-  background: var(--surface);
+  background: var(--control-bg);
   cursor: pointer;
 }
-.btn:active:not(:disabled) { background: var(--surface-2); }
+.btn:active:not(:disabled) { background: var(--control-press); }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
 .btn-primary:active:not(:disabled) { background: var(--accent-pressed); }
 .btn-ghost { background: transparent; border-color: transparent; color: var(--text); font-weight: 600; }
 .btn-danger { border-color: var(--bad); color: var(--bad-text); }
 .btn:disabled { color: var(--muted); border-color: var(--border); cursor: default; }
 /* 選んだ：インク塗り＋文字の反転＋先頭の ✓（色だけで伝えない） */
-.btn[aria-pressed='true'] { background: var(--select-bg); border-color: var(--select-bg); color: var(--on-select); font-weight: 700; }
+.btn[aria-pressed='true'] { background: var(--select-bg); border-color: var(--select-border); box-shadow: var(--select-ring); color: var(--on-select); font-weight: 700; }
 .btn[aria-pressed='true']::before { content: '✓\00a0'; }
 .btn[aria-pressed='true']:active:not(:disabled) { background: var(--select-bg); filter: brightness(0.9); }
 .btn:focus-visible,
@@ -248,7 +284,7 @@ input, select, textarea {
   padding: 6px 8px;
   border: 1px solid var(--control-border);
   border-radius: 8px;
-  background: var(--surface);
+  background: var(--input-bg);
   min-width: 0;
 }
 textarea { width: 100%; resize: vertical; }
@@ -270,11 +306,10 @@ textarea { width: 100%; resize: vertical; }
 .set-main input { width: 0; flex: 1 1 0; text-align: center; }
 .set-main .unit { color: var(--muted); flex: none; }
 .set-check { flex: none; width: 48px; padding: 0; font-size: 1.2rem; }
-.set-check[aria-pressed='true'] { background: var(--good); border-color: var(--good); color: #fff; }
-@media (prefers-color-scheme: dark) { .set-check[aria-pressed='true'] { color: #0b1220; } }
+.set-check[aria-pressed='true'] { background: var(--good); border-color: var(--good); color: var(--on-good); }
 .set.done .set-main input { opacity: 0.7; }
 .rir { display: flex; align-items: center; gap: 4px; }
-.rir > span { color: var(--muted); font-size: 0.8rem; flex: none; margin-right: 2px; }
+.rir > span { color: var(--muted); font-size: 0.8rem; font-weight: var(--fw-read); flex: none; margin-right: 2px; }
 .rir .btn { flex: 1; min-width: 0; padding: 0; }
 
 .pick-group { font-size: var(--fs-body); font-weight: 700; margin-top: 4px; }

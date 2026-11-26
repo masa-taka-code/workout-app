@@ -52,6 +52,11 @@
   border: 1px solid var(--bad);
   border-radius: 10px;
 }
+/* ダーク：エラー枠は危険色の面にし、中のボタンは赤を継がない */
+@media (prefers-color-scheme: dark) {
+  .fc-error { background: var(--bad-weak); color: var(--bad-text); }
+  .fc-error .btn:not(.btn-primary) { color: var(--text); }
+}
 .fc-error p { margin: 0 0 16px; }
 .fc-error-actions { display: flex; gap: 8px; }
 .fc-error-actions .btn { flex: 1; min-height: 44px; }

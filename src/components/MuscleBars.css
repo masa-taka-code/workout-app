@@ -13,8 +13,8 @@
 .mb-tone-ink, .mb-tone-muted { color: var(--text); }
 .mb-tone-warn { color: var(--warn-text); }
 .mb-tone-bad { color: var(--bad-text); }
-.mb-fill-good { background: var(--good-solid); }
+.mb-fill-good { background: var(--bar-good); }
 .mb-fill-ink { background: var(--muted); }
 .mb-fill-muted { background: var(--control-border); }
-.mb-fill-warn { background: var(--warn); }
+.mb-fill-warn { background: var(--bar-warn); }
 .mb-fill-bad { background: var(--bad); }

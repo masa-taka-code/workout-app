@@ -1,5 +1,5 @@
 .set-rest { display: flex; flex-wrap: wrap; gap: 6px; }
-.set-rest .btn { flex: 1 1 28%; }
+.set-rest .btn { flex: 1 1 28%; padding: 0 4px; white-space: nowrap; }
 
 .set-target-row { display: flex; align-items: center; gap: 8px; }
 .set-target-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

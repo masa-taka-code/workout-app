@@ -70,6 +70,63 @@ describe('デザイントークンのコントラスト（部品の枠 3:1）', 
   }
 })
 
+// ダークの面・ボタン・選択の新しい決まり（設計値）
+describe('ダークの追加トークン', () => {
+  const ratio = (a: string, b: string) => contrast(dark[a], dark[b])
+  const TEXT_PAIRS: [string, string, number][] = [
+    ['text', 'surface-2', 4.5], ['text', 'surface-3', 4.5], ['text', 'control-bg', 4.5], ['text', 'control-bg-bar', 4.5],
+    ['muted', 'bg', 4.5], ['muted', 'surface', 4.5], ['muted', 'surface-2', 4.5], ['muted', 'control-bg', 4.5],
+    ['muted-bar', 'surface-3', 4.5], ['muted-bar', 'control-bg-bar', 4.5],
+    ['text', 'input-bg', 4.5], ['on-accent', 'accent-pressed', 4.5], ['accent-text', 'surface-3', 4.5],
+    ['on-select', 'select-bg', 4.5], ['accent', 'surface-3', 3],
+  ]
+  for (const [fg, bg, min] of TEXT_PAIRS) {
+    it(`文字 ${fg} / ${bg} は ${min}:1 以上`, () => {
+      expect(dark[fg], `--${fg}`).toBeDefined()
+      expect(dark[bg], `--${bg}`).toBeDefined()
+      expect(ratio(fg, bg)).toBeGreaterThanOrEqual(min)
+    })
+  }
+  it('補足色は主な面（背景・カード・内側の面）の上で 7:1 以上、固定バー上の補足色も 7:1 以上', () => {
+    for (const bg of ['bg', 'surface', 'surface-2']) expect(ratio('muted', bg)).toBeGreaterThanOrEqual(7)
+    expect(ratio('muted-bar', 'surface-3')).toBeGreaterThanOrEqual(7)
+  })
+  it('部品の枠は、置かれる面の上で 3:1 以上', () => {
+    for (const bg of ['bg', 'surface', 'surface-2', 'surface-3']) {
+      expect(ratio('control-border', bg), bg).toBeGreaterThanOrEqual(3)
+    }
+  })
+  it('選んだものの枠は、面の上で 3:1 以上', () => {
+    for (const bg of ['surface', 'surface-2', 'surface-3', 'control-bg-bar']) expect(ratio('select-border', bg), bg).toBeGreaterThanOrEqual(3)
+  })
+  it('選んだものの塗りは、完了ボタンの塗りより暗い（輝度が 1/4 以下）', () => {
+    expect(lum(dark['select-bg'])).toBeLessThanOrEqual(lum(dark['accent']) / 4)
+  })
+  it('押せるボタンの面はカードより 1.3:1 以上明るく、内側の面や固定バーの中でも周りより暗くならない', () => {
+    expect(ratio('control-bg', 'surface')).toBeGreaterThanOrEqual(1.3)
+    expect(lum(dark['control-bg'])).toBeGreaterThan(lum(dark['surface-2']))
+    expect(lum(dark['control-bg-bar'])).toBeGreaterThan(lum(dark['surface-3']))
+  })
+  it('入力欄の面はカードより暗い', () => {
+    expect(lum(dark['input-bg'])).toBeLessThan(lum(dark.surface))
+  })
+  it('面の段差：背景 < カード < 内側の面 < 固定バー', () => {
+    const order = ['bg', 'surface', 'surface-2', 'surface-3']
+    for (let i = 1; i < order.length; i++) expect(lum(dark[order[i]])).toBeGreaterThan(lum(dark[order[i - 1]]))
+    expect(ratio('surface-3', 'surface')).toBeGreaterThanOrEqual(1.3)
+  })
+  it('分析の棒：達成と不足の輝度差が 1.5:1 以上、どちらも内側の面の上で 3:1 以上', () => {
+    expect(ratio('bar-good', 'bar-warn')).toBeGreaterThanOrEqual(1.5)
+    expect(ratio('bar-good', 'surface-2')).toBeGreaterThanOrEqual(3)
+    expect(ratio('bar-warn', 'surface-2')).toBeGreaterThanOrEqual(3)
+  })
+  it('グラフの色は面の上で 3:1 以上、筋肉マップの体の色は内側の面（ツールパネル）より明るい面', () => {
+    expect(ratio('data', 'surface')).toBeGreaterThanOrEqual(3)
+    expect(ratio('data', 'surface-2')).toBeGreaterThanOrEqual(3)
+    expect(dark['map-body']).toBe(dark['surface-3'])
+  })
+})
+
 describe('映像の上の状態表示（白文字 / --status-*-bg、ライト・ダーク共通）', () => {
   for (const [name, vars] of [['ライト', light], ['ダーク', dark]] as const) {
     for (const bg of ['status-ok-bg', 'status-caution-bg', 'status-ng-bg']) {

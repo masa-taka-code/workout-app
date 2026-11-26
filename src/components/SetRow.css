@@ -11,6 +11,7 @@
   background: transparent;
   color: var(--muted);
   font-size: var(--fs-body);
+  font-weight: var(--fw-read);
   text-align: left;
   cursor: pointer;
   font-variant-numeric: tabular-nums;
@@ -45,7 +46,7 @@
   line-height: 22px;
   color: var(--text);
 }
-.setrow-prev { flex: none; font-size: var(--fs-sub); color: var(--muted); }
+.setrow-prev { flex: none; font-size: var(--fs-sub); font-weight: var(--fw-read); color: var(--muted); }
 .setrow-caret { flex: none; }
 .setrow-amrap {
   display: inline-block;
@@ -64,6 +65,11 @@
 .setrow-done > .setrow-head { color: var(--text); border-left: 4px solid var(--good-solid); border-radius: 4px 8px 8px 4px; padding-left: 8px; }
 .setrow-done .setrow-dot { background: var(--good-solid); border-color: var(--good-solid); color: var(--on-good); }
 .setrow-done .setrow-dot-amrap { border-color: var(--warn); }
+/* ダーク：塗った丸は「今のセット」だけ。完了は緑の輪（2px）＋緑の ✓ */
+@media (prefers-color-scheme: dark) {
+  .setrow-done .setrow-dot { background: transparent; border-color: var(--good-solid); color: var(--good-text); }
+  .setrow-done .setrow-dot-amrap { border-color: var(--warn); }
+}
 
 /* 今のセット：画面で唯一の「浮いた箱」。surface 面に 2px の accent 枠 */
 .setrow-active {
@@ -72,6 +78,10 @@
   border-radius: 12px;
   box-shadow: var(--float-shadow);
   padding: 8px 4px;
+}
+/* ダーク：影が見えないので、枠を 2px＋1px のリング（見た目3px）にする。配置は動かない */
+@media (prefers-color-scheme: dark) {
+  .setrow-active { box-shadow: 0 0 0 1px var(--accent); }
 }
 .setrow-head-active { cursor: default; min-height: 36px; padding: 0 4px; color: var(--text); }
 .setrow-head-active:active { background: transparent; }
@@ -93,8 +103,9 @@
   height: 56px;
   border: 1px solid var(--control-border);
   border-radius: 8px;
-  background: var(--surface);
+  background: var(--control-bg);
   font-size: var(--fs-num-m);
+  font-weight: var(--fw-read);
   line-height: 1;
   cursor: pointer;
   /* 長押しで連続して動かすので、長押しメニュー・文字選択・ダブルタップ拡大を止める */
@@ -103,7 +114,7 @@
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
-.stepper-btn:active { background: var(--surface-2); }
+.stepper-btn:active { background: var(--control-press); }
 .stepper-field { position: relative; flex: 1 1 0; min-width: 0; }
 .stepper-field .stepper-input {
   width: 100%;
@@ -114,13 +125,13 @@
   font-weight: 700;
   text-align: center;
   font-variant-numeric: tabular-nums;
-  background: var(--surface);
+  background: var(--input-bg);
   border: 1px solid var(--control-border);
   border-radius: 8px;
 }
 .stepper-unit { position: absolute; right: 8px; bottom: 6px; font-size: var(--fs-sub); color: var(--muted); pointer-events: none; }
 
-.setrow-help { font-size: var(--fs-body); color: var(--muted); margin-bottom: 4px; }
+.setrow-help { font-size: var(--fs-body); font-weight: var(--fw-read); color: var(--muted); margin-bottom: 4px; }
 .setrow-rir { display: flex; gap: 6px; }
 .setrow-rirbtn {
   flex: 1 1 0;
@@ -129,14 +140,14 @@
   padding: 0;
   border: 1px solid var(--control-border);
   border-radius: 8px;
-  background: var(--surface);
+  background: var(--control-bg);
   font-size: var(--fs-label);
   font-weight: 600;
   cursor: pointer;
 }
-.setrow-rirbtn:active { background: var(--surface-2); }
+.setrow-rirbtn:active { background: var(--control-press); }
 /* 選んだ RIR は濃いグレー（インク）塗り＋✓。青は塗らない */
-.setrow-rirbtn[aria-pressed='true'] { background: var(--select-bg); border-color: var(--select-bg); color: var(--on-select); font-weight: 700; }
+.setrow-rirbtn[aria-pressed='true'] { background: var(--select-bg); border-color: var(--select-border); box-shadow: var(--select-ring); color: var(--on-select); font-weight: 700; }
 .setrow-rirbtn[aria-pressed='true']::before { content: '✓'; font-size: var(--fs-sub); margin-right: 1px; }
 
 .setrow-actions { display: flex; gap: 8px; }
@@ -145,8 +156,8 @@
   height: 48px;
   border: 1px solid var(--control-border);
   border-radius: 8px;
-  background: var(--surface);
+  background: var(--control-bg);
   font-size: var(--fs-body);
   cursor: pointer;
 }
-.setrow-sub:active { background: var(--surface-2); }
+.setrow-sub:active { background: var(--control-press); }

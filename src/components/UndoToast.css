@@ -31,4 +31,10 @@
 }
 .undo-btn:active { background: rgb(255 255 255 / 0.15); }
 .undo-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* ダーク：明るい板にせず、固定バーと同じ一段明るい面＋枠にする（主操作より目立たせない） */
+@media (prefers-color-scheme: dark) {
+  .undo-toast { background: var(--surface-3); color: var(--text); border: 1px solid var(--control-border); }
+  .undo-btn { color: var(--accent-text); }
+  .undo-btn:active { background: rgb(255 255 255 / 0.08); }
+}
 .undo-toast-above { bottom: calc(var(--tabbar-h, 56px) + var(--timer-h, 0px) + 8px + var(--undo-below-h, 0px) + env(safe-area-inset-bottom)); }

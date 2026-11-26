@@ -13,11 +13,12 @@ export interface BodyMapProps {
   label?: string
 }
 
-/** 強さを段階（1〜LEVELS）に分けて、段階ごとの色を用意する。fill-opacity 相当 = 0.25 + 0.75×強さ */
+/** 強さを段階（1〜LEVELS）に分けて、段階ごとの色を用意する */
 const LEVELS = 10
 const COLORS = Array.from({ length: LEVELS }, (_, i) => {
-  const opacity = 0.25 + 0.75 * ((i + 1) / LEVELS)
-  return `color-mix(in srgb, var(--accent) ${Math.round(opacity * 100)}%, transparent)`
+  // 一番薄い段階の濃さは --map-min（ライト 25、ダーク 40）。そこから 100% まで等間隔
+  const ratio = (i + 1) / LEVELS
+  return `color-mix(in srgb, var(--data) calc((var(--map-min) + (100 - var(--map-min)) * ${ratio}) * 1%), transparent)`
 })
 
 const HEIGHT = { sm: 100, md: 220 }
@@ -34,7 +35,7 @@ export default function BodyMap({ highlights, size = 'sm', label }: BodyMapProps
     <Model
       type={type}
       data={data}
-      bodyColor="var(--border)"
+      bodyColor="var(--map-body)"
       highlightedColors={COLORS}
       style={{ height: h, width: h / 2 }}
       svgStyle={{ display: 'block', pointerEvents: 'none' }}

@@ -1,7 +1,7 @@
 .analysis-note { font-size: var(--fs-note); line-height: 1.4; margin: 12px 0 0; }
 
 
-.analysis-select { width: 100%; min-height: 44px; padding: 0 10px; font-size: 16px; color: var(--text); background: var(--surface); border: 1px solid var(--control-border); border-radius: 8px; margin-bottom: 12px; }
+.analysis-select { width: 100%; min-height: 44px; padding: 0 10px; font-size: 16px; color: var(--text); background: var(--input-bg); border: 1px solid var(--control-border); border-radius: 8px; margin-bottom: 12px; }
 
 .pb-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
 .pb-tile { padding: 12px; background: var(--surface-2); border-radius: 8px; min-width: 0; }

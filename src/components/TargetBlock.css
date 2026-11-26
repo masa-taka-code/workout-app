@@ -59,5 +59,6 @@
   cursor: pointer;
   color: var(--muted);
   font-size: var(--fs-sub);
+  font-weight: var(--fw-read);
 }
 .target-why p { color: var(--muted); font-size: var(--fs-sub); padding-bottom: 4px; overflow-wrap: anywhere; }

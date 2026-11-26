@@ -44,7 +44,7 @@ function save(id: string) {
 export default function Analysis({ data }: ScreenProps) {
   const today = localToday()
   const colors = {
-    accent: cssVar('--accent', '#2563eb'),
+    data: cssVar('--data', '#2563eb'),
     surface: cssVar('--surface', '#ffffff'),
     border: cssVar('--border', '#d4d4d8'),
     muted: cssVar('--muted', '#71717a'),
@@ -128,8 +128,8 @@ export default function Analysis({ data }: ScreenProps) {
                       )
                     }}
                   />
-                  <Line type="monotone" dataKey="past" stroke={colors.accent} strokeWidth={2} dot={{ r: 3, fill: colors.accent, stroke: colors.accent }} isAnimationActive={false} />
-                  <Line type="monotone" dataKey="todayPt" stroke="none" dot={{ r: 5, fill: colors.surface, stroke: colors.accent, strokeWidth: 2 }} activeDot={{ r: 5, fill: colors.surface, stroke: colors.accent, strokeWidth: 2 }} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="past" stroke={colors.data} strokeWidth={2} dot={{ r: 3, fill: colors.data, stroke: colors.data }} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="todayPt" stroke="none" dot={{ r: 5, fill: colors.surface, stroke: colors.data, strokeWidth: 2 }} activeDot={{ r: 5, fill: colors.surface, stroke: colors.data, strokeWidth: 2 }} isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -184,7 +184,7 @@ export default function Analysis({ data }: ScreenProps) {
                   )
                 }}
               />
-              <Bar dataKey="sessions" fill={colors.accent} radius={[4, 4, 0, 0]} isAnimationActive={false} />
+              <Bar dataKey="sessions" fill={colors.data} radius={[4, 4, 0, 0]} isAnimationActive={false} />
             </BarChart>
           </ResponsiveContainer>
         </div>

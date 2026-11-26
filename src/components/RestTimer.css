@@ -1,6 +1,11 @@
 /* 休憩タイマー（固定バー .csb の中身。休憩中と休憩終了で高さをそろえる） */
 .timer { --timer-body-h: 168px; background: transparent; color: var(--text); }
 .timer-bar { height: 8px; background: var(--border); }
+/* 残り10秒：帯を太くし（高さは本体で埋め合わせて動かさない）、「まもなく」の文字も出す */
+.timer-warn .timer-bar { height: 12px; }
+.timer-warn .timer-body { height: calc(var(--timer-body-h) - 12px); }
+.timer-soon { display: block; margin-top: -4px; font-size: var(--fs-label); line-height: 1.2; font-weight: 700; color: var(--text); }
+@media (prefers-color-scheme: dark) { .timer-bar { background: var(--bg); } }
 .timer-bar-fill { height: 100%; background: var(--accent); transform-origin: left center; transition: transform 250ms linear; }
 .timer-warn .timer-bar-fill { background: var(--warn); }
 .timer-body {
@@ -39,14 +44,14 @@
   padding: 0;
   border: 1px solid var(--control-border);
   border-radius: 8px;
-  background: var(--surface);
+  background: var(--control-bg);
   font-size: var(--fs-label);
   font-weight: 600;
   cursor: pointer;
 }
-.timer-rir-btn:active { background: var(--surface-2); }
+.timer-rir-btn:active { background: var(--control-press); }
 .timer-rir-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.timer-rir-btn[aria-pressed='true'] { background: var(--select-bg); border-color: var(--select-bg); color: var(--on-select); font-weight: 700; }
+.timer-rir-btn[aria-pressed='true'] { background: var(--select-bg); border-color: var(--select-border); box-shadow: var(--select-ring); color: var(--on-select); font-weight: 700; }
 .timer-rir-btn[aria-pressed='true']::before { content: '✓'; font-size: var(--fs-sub); margin-right: 1px; }
 
 /* 休憩終了：バー全体を緑で塗る。完了ボタンは同じ位置・同じ青のまま、縁取りで緑と区別する */

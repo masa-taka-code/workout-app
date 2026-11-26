@@ -270,7 +270,8 @@ export default function Today({ data, setData }: ScreenProps) {
   }
 
   const condLabel = CONDITIONS.find(c => c.value === condition)?.label ?? '普通'
-  const showCond = session?.condition === undefined || condOpen
+  // 最初のセットを完了したら、調子は「調子：普通 ▸」の1行にたたむ（押すと開く）
+  const showCond = progress.done === 0 || condOpen
 
   const toggleIn = (set: Set<string>, id: string, on: boolean): Set<string> => {
     const next = new Set(set)

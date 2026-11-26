@@ -28,7 +28,7 @@
 .ex-error { color: var(--bad-text); font-size: var(--fs-sub); }
 .ex-chip { display: inline-flex; align-items: center; gap: 4px; }
 .ex-chip-role { font-size: var(--fs-sub); font-weight: 700; }
-.ex-chip-sub[aria-pressed='true'] { background: transparent; color: var(--text); border-color: var(--select-bg); border-style: dashed; }
+.ex-chip-sub[aria-pressed='true'] { background: transparent; color: var(--text); border-color: var(--select-border); border-style: dashed; box-shadow: none; }
 .ex-delete { color: var(--bad-text); margin-left: auto; }
 
 /* レップ範囲：下限〜上限を横一列に */

@@ -23,6 +23,9 @@
   box-shadow: 0 4px 12px rgb(0 0 0 / 0.15);
   overflow: hidden;
 }
+@media (prefers-color-scheme: dark) {
+  .overflow-menu { background: var(--surface-3); border-color: var(--control-border); }
+}
 .overflow-item {
   display: block;
   width: 100%;

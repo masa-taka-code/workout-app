@@ -139,7 +139,10 @@ export default function RestTimer({ seconds, onSkip, sound = true, next, started
       </div>
       <div className="timer-body">
         <div className="timer-row">
-          <span className="timer-time">{`${mm}:${ss}`}</span>
+          <span className="timer-time">
+            {`${mm}:${ss}`}
+            {remaining <= WARN_SECONDS && <span className="timer-soon">まもなく</span>}
+          </span>
           <button
             className="btn timer-btn timer-btn-add"
             onClick={() => {
