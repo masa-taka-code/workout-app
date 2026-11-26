@@ -1,32 +1,26 @@
-# React + TypeScript + Vite
+# 筋トレログ
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+筋肥大の研究をもとに、記録するほど次の目標が自分に合っていく筋トレ記録アプリです。スマホのブラウザで動き、ホーム画面に追加してオフラインでも使えます（PWA）。
 
-Currently, two official plugins are available:
+- 公開ページ：https://masa-taka-code.github.io/workout-app/
+- 記録はその端末のブラウザ（localStorage）だけに保存し、サーバーには送りません。動画フォーム採点の解析部品だけ、初回にダウンロードして端末にキャッシュします。
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 主な機能
+- 前回の記録から重量×回数×セット数を自動で提案（余力 RIR で補正したダブルプログレッション、停滞時だけデロード）
+- 筋肉ごとの週セット数（10〜20）を振り返りと達成率で調整
+- 片手で使える記録画面、休憩タイマー、ウォームアップとプレート計算
+- 履歴・分析（週ボリュームの人体図、推定1RMの推移、自己ベスト）、バックアップ
+- 動画フォーム採点（β、9種目）：ブラウザ内の姿勢推定で回数・可動域・テンポ・崩れを表示
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+## 開発
+```sh
+npm ci
+npm run dev      # 開発サーバー
+npm test         # テスト（Vitest）
+npm run lint     # lint（oxlint）
+npm run build    # 本番ビルド（dist/）
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+main ブランチに push すると、GitHub Actions が lint・テスト・ビルドを通してから GitHub Pages に公開します。初回だけ Settings → Pages → Source を「GitHub Actions」にしてください。
+
+開発のルールは `CLAUDE.md`、依存ライブラリのライセンスは `THIRD_PARTY_NOTICES.md` を参照してください。
