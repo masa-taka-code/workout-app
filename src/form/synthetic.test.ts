@@ -170,7 +170,7 @@ describe('今のコード（RepTracker）の誤差の記録：スクワット、
     expect(table['45/20'].mae).toBeGreaterThan(table['15/0'].mae)
   })
 
-  it('隠れ（手前の膝 lowVis、最下点を含む）3・6・10 コマ：今のコードは回数を保つが、欠けたコマは捨てる', () => {
+  it('隠れ（手前の膝 lowVis、最下点を含む）3・6・10 コマ：回数を保つ。2回目の補正（補間・奥側での代用）で、誤差は 5° 未満', () => {
     for (const n of [3, 6, 10]) {
       let countOk = 0
       const errs: number[] = []
@@ -185,9 +185,10 @@ describe('今のコード（RepTracker）の誤差の記録：スクワット、
         errs.push(...r.errors.map(Math.abs))
       }
       expect(countOk).toBe(6)
-      // 最下点を捨てるので、欠けが長いほど「浅く」見えて誤差が増える
+      // 1回目の記録（欠けたコマを捨てていた頃）：最下点を捨てるので、欠けが長いほど「浅く」見えて、10 コマで 5° を超えていた（約 11°）。
+      // 2回目で短い欠けは補間し、0.2 秒を超える欠けは奥側の膝で代用するようにしたので、5° 未満になる（refine.test.ts に詳しい試験）
       expect(Number.isFinite(mean(errs))).toBe(true)
-      if (n === 10) expect(mean(errs)).toBeGreaterThan(5)
+      expect(mean(errs)).toBeLessThan(5)
     }
   })
 })

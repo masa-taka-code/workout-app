@@ -90,6 +90,7 @@ function phiOf(world: Pose): number | undefined {
  * 2. world から求めた φ の標準偏差が 10° を超える、または隣のコマとの差が 20° を超えるコマが 10% を超える
  * 3. 左右の太ももの長さの比（左÷右、中央値）が 0.8〜1.25 の範囲外
  * 4. 使えるコマが WORLD_MIN_FRAMES 未満（判断できないので信用しない）
+ * 5. z がほぼ全点で同じ（奥行きが潰れている。isWorldDepthFlat。1回目の提案をメインが採用）
  *
  * side を渡すと判定 1 はその側だけで見る（普通は計測に使う側）。渡さなければ両側を見て、悪い方を使う。
  * 判定 2 の φ は、肩の線が奥行き方向（真横）に近いほど x が小さく不安定になるので、真横の撮影では標準偏差が大きめに出る。
@@ -164,18 +165,21 @@ export function judgeWorldTrust(key: FormExerciseKey, frames: WorldFrame[], opts
     if (lr < WORLD_LR_MIN || lr > WORLD_LR_MAX) reasons.push('world 座標の左右の骨の長さが合っていません')
   }
 
+  // 判定 5（2回目で追加）：奥行きが潰れている（z が全点でほぼ同じ）。φ≤30° の真横に近い撮影では判定 1〜3 で見つからないため
+  if (isWorldDepthFlat(frames)) reasons.push('world 座標の奥行きが潰れています')
+
   return { trust: reasons.length === 0, reasons, stats }
 }
 
-/** 提案（judgeWorldTrust には入れていない）：z がほぼ全点で同じ（奥行きが潰れている）コマの判定。このしきい値は【設計値・暫定】 */
+/** 判定 5：z がほぼ全点で同じ（奥行きが潰れている）コマの判定。このしきい値は【設計値・暫定】 */
 export const WORLD_FLAT_RANGE_M = 0.01
-/** 提案：潰れたコマがこの割合を超えたら「奥行きが潰れている」。【設計値・暫定】 */
+/** 判定 5：潰れたコマがこの割合を超えたら「奥行きが潰れている」。【設計値・暫定】 */
 export const WORLD_FLAT_RATIO = 0.5
 
 /**
- * 提案（仕様 3.5 には無い）：world の z が潰れている（全点がほぼ同じ z）かを返す。
+ * 判定 5（仕様 3.5 には無い。1回目の提案で、2回目に judgeWorldTrust へ組み込んだ）：world の z が潰れている（全点がほぼ同じ z）かを返す。
  * 仕様の判定 1〜3 だけでは、真横に近い撮影（φ≤30°）で z が 0 に潰れても検出できない（骨がほぼ画面と平行で、長さが変わらないため）。
- * 使うかどうかはメインセッションが決める。使う点は、肩・腰・膝・足首・肘・手首の両側（visibility 0.5 以上のもの）。
+ * 使う点は、肩・腰・膝・足首・肘・手首の両側（visibility 0.5 以上のもの）。
  */
 export function isWorldDepthFlat(frames: WorldFrame[]): boolean {
   const idx = [

@@ -37,10 +37,17 @@ export function statOf(values: number[]): BaselineStat | undefined {
   return { med, mad: mad * MAD_SCALE }
 }
 
-/** 基準に使えるレップか：計測値があり、信頼度 0.8 以上、向きが ok、撮影条件が不良でない */
+/** 設計値・暫定：推定のコマ（見えなかった関節を補ったコマ）の割合がこれ以上のレップは、基準づくりに使わない（仕様 3.7） */
+export const BASELINE_MAX_ESTIMATED = 0.2
+
+/**
+ * 基準に使えるレップか：計測値があり、信頼度 0.8 以上、向きが ok、撮影条件が不良でない。
+ * 見えなかった関節の補正が入ったレップ（推定の割合 0.2 以上、奥側で代用、最下点が推定）は使わない（推定した値を「自分の基準」にしない）。
+ */
 export function isBaselineRep(r: RepResult): boolean {
   const m = r.metrics
   return !!m && m.confidence >= BASELINE_MIN_CONFIDENCE && m.viewOk === 'ok' && m.placementOk !== false
+    && (m.estimatedRatio ?? 0) < BASELINE_MAX_ESTIMATED && !m.mirrored && !m.bottomEstimated
 }
 
 /** レップから取る指標の値 */

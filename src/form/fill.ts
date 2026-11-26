@@ -8,6 +8,11 @@
  *   欠けの大きさと誤差の関係は仕様 2.2 の【計算】（余弦状の動き、30fps）に基づく。論文の値ではない。
  */
 
+import type { FormExerciseKey, JointSource, Landmark, Pose } from './types'
+import { CONFIG, MAIN_JOINTS, MIN_VISIBILITY, SIDE_INDEX, computeAngles, computeMainAngle } from './rules'
+import type { Joint, Side } from './rules'
+import type { MeasureFrame } from './measure'
+
 /** 補間の最大の欠け（コマ数）。【設計値・暫定】 */
 export const FILL_MAX_FRAMES = 6
 /** 補間の最大の欠け（ミリ秒）。【設計値・暫定】 */
@@ -217,5 +222,171 @@ export function findSpikes(points: (XY | undefined)[], L: number, ratio = SPIKE_
     const a = points[i - 1]
     const b = points[i + 1]
     return !!(p && a && b && isSpike(a, p, b, L, ratio))
+  })
+}
+
+// ---------------------------------------------------------------------------
+// レップ単位の補正（外れ値 → 短い欠けの補間 → 奥側での代用）。RepTracker の finishRep が、計測の前に呼ぶ。
+// ---------------------------------------------------------------------------
+
+/**
+ * 両脚・両腕を同じように動かす種目（奥側での代用の対象。仕様 3.4）。
+ * bss（片側ずつ）は対象外。curl は片腕ずつ（交互）のこともあるので対象外にした（仕様は curl を両方に書いていて矛盾）。lateral は正面撮影なので対象外。
+ */
+export const MIRROR_KEYS: readonly FormExerciseKey[] = ['squat', 'bench', 'rdl', 'ohp', 'pulldown', 'ohext']
+
+export interface RefineOptions {
+  /** 立位などで分かっている、画面上の骨の長さ（太もも／上腕、すね／前腕）。飛びの判定（SPIKE_RATIO×骨の長さ）に使う。無ければレップ内の中央値 */
+  lens?: { a: number; b: number }
+}
+
+const medianNum = (xs: number[]): number | undefined => {
+  if (xs.length === 0) return undefined
+  const v = [...xs].sort((a, b) => a - b)
+  const m = v.length >> 1
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2
+}
+const farOf = (side: Side): Side => (side === 'left' ? 'right' : 'left')
+
+/**
+ * 1レップのコマ（RepTracker が溜めたもの）の、見えなかった関節を補う。元の配列は変えず、補ったコマだけ新しいオブジェクトにして返す。
+ * 1. 飛び（前後のコマから大きく離れて戻る 1 コマ）を欠けにする（外れ値）。長さ・可動域の外れ値は RepTracker が push のときに欠けにしている。
+ * 2. 関節ごとに、短い欠け（6 コマ以下かつ 0.2 秒以下）を fillGaps で補間する。補ったコマは 'interpolated'。
+ * 3. それでも主関節が欠けているコマは、奥側の主関節がすべて見えていれば、その座標で代用する（'mirrored'。MIRROR_KEYS の種目だけ）。
+ * 4. 主関節の 3 点が揃ったコマは角度を計算し直して visible にする。埋められなかった関節は 'missing' のまま残す。
+ * 欠けが無ければ frames をそのまま返す。lateral は補正しない（左右の腕を使うため）。
+ */
+export function refineRep(key: FormExerciseKey, frames: MeasureFrame[], opts: RefineOptions = {}): MeasureFrame[] {
+  if (key === 'lateral' || frames.length < 3) return frames
+  const joints = CONFIG[key].joints
+  const main = MAIN_JOINTS[key]
+  const n = frames.length
+  // このレップで使った側（いちばん多い側）
+  const cnt = { left: 0, right: 0 }
+  for (const f of frames) if (f.side) cnt[f.side]++
+  if (cnt.left + cnt.right === 0) return frames
+  const side: Side = cnt.left >= cnt.right ? 'left' : 'right'
+  const times = frames.map(f => f.t)
+
+  // 1. measured の印と座標
+  const meas: Record<string, boolean[]> = {}
+  const pos: Record<string, (Landmark | undefined)[]> = {}
+  for (const j of joints) {
+    meas[j] = frames.map(f => f.side === side && (f.src ? f.src[j] === 'measured' : !!f.pts?.[j]) && !!f.pts?.[j])
+    pos[j] = frames.map((f, i) => (meas[j][i] ? f.pts?.[j] : undefined))
+  }
+
+  // 飛びの判定：骨の長さ L（立位の長さがあればそれ、無ければレップ内の中央値の小さい方）
+  const L = opts.lens
+    ? Math.min(opts.lens.a, opts.lens.b)
+    : (() => {
+        const a = medianNum(frames.map(f => f.segA).filter((v): v is number => v !== undefined))
+        const b = medianNum(frames.map(f => f.segB).filter((v): v is number => v !== undefined))
+        return a !== undefined && b !== undefined ? Math.min(a, b) : 0
+      })()
+  if (L > 0) {
+    for (const j of joints) {
+      const spikes = findSpikes(pos[j].map(p => (p ? { x: p.x, y: p.y } : undefined)), L)
+      spikes.forEach((sp, i) => {
+        if (sp) { meas[j][i] = false; pos[j][i] = undefined }
+      })
+    }
+  }
+
+  // 2. 関節ごとに補間（x と y は同じ欠けなので、同じコマが埋まる）
+  const filled: Record<string, { x: (number | undefined)[]; y: (number | undefined)[]; source: GapSource[] }> = {}
+  for (const j of joints) {
+    const fx = fillGaps(pos[j].map(p => p?.x), times)
+    const fy = fillGaps(pos[j].map(p => p?.y), times)
+    filled[j] = { x: fx.values, y: fy.values, source: fx.source.map((sx, i) => (sx === 'interpolated' && fy.source[i] === 'interpolated' ? 'interpolated' : sx === 'measured' ? 'measured' : 'missing')) }
+  }
+
+  const farIdx = SIDE_INDEX[farOf(side)]
+  const nearIdx = SIDE_INDEX[side]
+  const out: MeasureFrame[] = new Array(n)
+  let changed = false
+  for (let i = 0; i < n; i++) {
+    const f = frames[i]
+    // 補間した結果、主関節が揃うか
+    const src: Partial<Record<Joint, JointSource>> = {}
+    for (const j of joints) src[j] = filled[j].source[i]
+    // 3. 奥側での代用：主関節のどれかが埋まらず、奥側の主関節がすべて見えているとき
+    let mirror = false
+    if (MIRROR_KEYS.includes(key) && f.pose && main.some(j => src[j] === 'missing')) {
+      mirror = main.every(j => {
+        const lm = f.pose?.[farIdx[j]]
+        return !!lm && (lm.visibility ?? 0) >= MIN_VISIBILITY
+      })
+    }
+    const orig = f.src
+    const unchanged = !mirror && joints.every(j => src[j] === (orig?.[j] ?? (f.pts?.[j] ? 'measured' : 'missing')))
+    if (unchanged) { out[i] = f; continue }
+    changed = true
+
+    const pts: Partial<Record<Joint, Landmark>> = {}
+    const pose: Pose = f.pose ? [...f.pose] : (Array.from({ length: 33 }, () => undefined) as unknown as Pose)
+    for (const j of joints) {
+      if (mirror && main.includes(j)) {
+        const lm = f.pose?.[farIdx[j]] as Landmark
+        pts[j] = lm
+        src[j] = 'mirrored'
+      } else if (src[j] === 'measured') {
+        pts[j] = f.pts?.[j]
+      } else if (src[j] === 'interpolated') {
+        // 補間した点。visibility は「見えている」ぎりぎりにして、他の計測が使えるようにする（推定の印は src に付いている）
+        pts[j] = { x: filled[j].x[i] as number, y: filled[j].y[i] as number, z: 0, visibility: MIN_VISIBILITY }
+      } else if (f.pose && (f.pose[farIdx[j]]?.visibility ?? 0) >= MIN_VISIBILITY && mirror) {
+        // （代用したコマで、主関節以外が欠けているとき）奥側の同じ関節
+        pts[j] = f.pose[farIdx[j]]
+        src[j] = 'mirrored'
+      }
+      const p = pts[j]
+      if (p) pose[nearIdx[j]] = p
+    }
+    const mainOk = main.every(j => !!pts[j])
+    let angle: number | undefined
+    let angles: Record<string, number> | undefined
+    if (mainOk) {
+      if (joints.every(j => !!pts[j])) {
+        angles = computeAngles(key, pts as Record<Joint, Landmark>, pose)
+        angle = angles[CONFIG[key].main]
+      } else {
+        angle = computeMainAngle(key, pts)
+        if (angle !== undefined) angles = { [CONFIG[key].main]: angle }
+      }
+    }
+    // 補ったコマの minVis：measured と mirrored の関節だけで見る（補間した点は推定の割合で別に下げる）
+    let minVis = 1
+    let any = false
+    for (const j of joints) {
+      if ((src[j] === 'measured' || src[j] === 'mirrored') && pts[j]) { minVis = Math.min(minVis, pts[j]?.visibility ?? 0); any = true }
+    }
+    out[i] = {
+      ...f,
+      side,
+      visible: mainOk && angle !== undefined,
+      pose: f.pose || mainOk ? pose : undefined,
+      // world は補ったコマでは使わない（奥行きがあてにならないため）
+      world: undefined,
+      pts,
+      angle,
+      angles,
+      minVis: any ? minVis : 0,
+      segA: undefined,
+      segB: undefined,
+      worldLen: undefined,
+      src,
+    }
+  }
+  if (!changed) return frames
+  // 補ったコマは生の角度（RepTracker の中央値フィルタを通っていない）なので、主関節の角度を出し直し、前後 1 コマを含む 3 コマの中央値にそろえる。
+  // そうしないと、補ったコマのノイズが最小角度（最下点）に直接出て、実測のコマより深く出る
+  const rawAng = out.map(f => (f.visible ? computeMainAngle(key, f.pts ?? {}) : undefined))
+  const mainName = CONFIG[key].main
+  return out.map((f, i) => {
+    if (!f.visible) return f
+    const win = [rawAng[i - 1], rawAng[i], rawAng[i + 1]].filter((v): v is number => v !== undefined)
+    const m = medianNum(win)
+    return m === undefined ? f : { ...f, angle: m, angles: { ...f.angles, [mainName]: m } }
   })
 }

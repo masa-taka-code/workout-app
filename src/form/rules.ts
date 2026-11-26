@@ -46,6 +46,22 @@ export const CONFIG: Record<FormExerciseKey, FormConfig> = {
   bss: { main: 'knee', top: 160, joints: ['shoulder', 'hip', 'knee', 'ankle'], eccentricFirst: true },
 }
 
+/**
+ * 主関節の角度に使う 3 点（頂点が真ん中）。ここが揃っていれば、他の関節（体幹の肩など）が見えなくても回数を数える。
+ * lateral は左右の腕の外転で数えるので、必要な関節すべてを主関節の扱いにする（欠けの補正もしない）。
+ */
+export const MAIN_JOINTS: Record<FormExerciseKey, Joint[]> = {
+  squat: ['hip', 'knee', 'ankle'],
+  bss: ['hip', 'knee', 'ankle'],
+  rdl: ['shoulder', 'hip', 'knee'],
+  bench: ['shoulder', 'elbow', 'wrist'],
+  ohp: ['shoulder', 'elbow', 'wrist'],
+  pulldown: ['shoulder', 'elbow', 'wrist'],
+  ohext: ['shoulder', 'elbow', 'wrist'],
+  curl: ['shoulder', 'elbow', 'wrist'],
+  lateral: ['shoulder', 'elbow', 'wrist', 'hip'],
+}
+
 /** 脚（太もも・すね）で体節長・速度を見る種目 */
 export function isLegKey(key: FormExerciseKey): boolean {
   return key === 'squat' || key === 'rdl' || key === 'bss'
@@ -119,6 +135,17 @@ export function computeAngles(key: FormExerciseKey, p: Record<Joint, Landmark>, 
     upperArm: jointAngle(p.elbow, p.shoulder, p.hip),
     torso: tiltFromVertical(p.hip, p.shoulder),
   }
+}
+
+/**
+ * 主関節の角度だけを計算する（主関節の 3 点が揃っていればよい。lateral は対象外で undefined）。
+ * computeAngles の主関節の値と同じ式。
+ */
+export function computeMainAngle(key: FormExerciseKey, p: Partial<Record<Joint, Landmark>>): number | undefined {
+  if (key === 'lateral') return undefined
+  const [a, b, c] = MAIN_JOINTS[key].map(j => p[j])
+  if (!a || !b || !c) return undefined
+  return jointAngle(a, b, c)
 }
 
 export function makeIssue(code: string, message: string, fix: string, penalty: number): Issue {

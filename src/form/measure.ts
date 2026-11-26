@@ -4,10 +4,10 @@
  * 角度は度、比は体節長に対する比。座標は縦横比補正済みの正規化座標（y は下向きが正）。
  * 閾値のうち「暫定」と書いたものは根拠が弱い仮の値。
  */
-import type { FormExerciseKey, Landmark, Pose, RepMetrics, ViewKind, ViewOk } from './types'
+import type { FormExerciseKey, JointSource, Landmark, Pose, RepMetrics, ViewKind, ViewOk } from './types'
 import { LM } from './types'
 import { jointAngle, signedTiltFromVertical, tiltFromVertical } from './geometry'
-import { CONFIG, MIN_VISIBILITY, SIDE_INDEX, isLegKey } from './rules'
+import { CONFIG, MAIN_JOINTS, MIN_VISIBILITY, SIDE_INDEX, isLegKey } from './rules'
 import type { PlacementLevel } from './placement'
 import type { Joint, Side } from './rules'
 
@@ -70,7 +70,12 @@ export interface MeasureFrame {
   angle?: number
   /** 主な角度すべて（中央値フィルタ後） */
   angles?: Record<string, number>
-  /** 必要な関節の visibility の最小値 */
+  /**
+   * 必要な関節ごとの出どころ（RepTracker と fill.ts の refineRep が付ける）。
+   * 無いときは、見えているコマなら全部 measured、見えていないコマは数えない（古い呼び出しとの互換）
+   */
+  src?: Partial<Record<Joint, JointSource>>
+  /** 必要な関節の visibility の最小値（measured と mirrored の関節だけで見る） */
   minVis?: number
   /** 体節長（2D）：squat は太もも・すね、bench/curl は上腕・前腕 */
   segA?: number
@@ -127,26 +132,39 @@ export function makeFrame(
     angle: number
     angles: Record<string, number>
     placement?: PlacementLevel
+    /** 関節ごとの出どころ（無ければ全部 measured）。measured でない関節があるコマは、体節長・world の長さを出さない */
+    src?: Partial<Record<Joint, JointSource>>
   },
 ): MeasureFrame {
   let minVis = 1
-  for (const j of CONFIG[key].joints) minVis = Math.min(minVis, src.pts[j]?.visibility ?? 0)
-  const seg = segmentLengths(key, src.pts)
+  let allMeasured = true
+  for (const j of CONFIG[key].joints) {
+    const s = src.src?.[j] ?? 'measured'
+    if (s !== 'measured') allMeasured = false
+    if (s === 'measured' || s === 'mirrored') minVis = Math.min(minVis, src.pts[j]?.visibility ?? 0)
+  }
+  const seg = allMeasured ? segmentLengths(key, src.pts) : undefined
   return {
     t: src.t,
     visible: true,
     side: src.side,
     pose: src.pose,
-    world: src.world,
+    world: allMeasured ? src.world : undefined,
     pts: src.pts,
     angle: src.angle,
     angles: src.angles,
     minVis,
     segA: seg?.a,
     segB: seg?.b,
-    worldLen: src.world ? worldLength(key, src.world, src.side) : undefined,
+    worldLen: allMeasured && src.world ? worldLength(key, src.world, src.side) : undefined,
     placement: src.placement,
+    ...(src.src ? { src: src.src } : {}),
   }
+}
+
+/** 必要な関節のどれかが measured でないコマか（出どころの印があるコマだけ判定する） */
+export function isEstimatedFrame(f: MeasureFrame): boolean {
+  return !!f.src && Object.values(f.src).some((s) => s !== 'measured')
 }
 
 // ---------------------------------------------------------------------------
@@ -230,10 +248,12 @@ export function viewFromRatio(ratio: number, key?: FormExerciseKey): { view: Vie
 }
 
 /** レップ内のフレームから撮影の向きと良否を決める（world があれば φ、無ければ 2D の比） */
-export function judgeView(frames: MeasureFrame[], key?: FormExerciseKey): { view: ViewKind; viewOk: ViewOk; phi?: number } {
+export function judgeView(
+  frames: MeasureFrame[], key?: FormExerciseKey, useWorld = true,
+): { view: ViewKind; viewOk: ViewOk; phi?: number } {
   const phis: number[] = []
   for (const f of frames) {
-    const p = f.world ? phiFromWorld(f.world) : undefined
+    const p = useWorld && f.world ? phiFromWorld(f.world) : undefined
     if (p !== undefined) phis.push(p)
   }
   if (phis.length > 0) {
@@ -345,6 +365,22 @@ export interface RepWindow {
   endT: number
 }
 
+/** measureRep の追加の入力 */
+export interface MeasureOptions {
+  /**
+   * world 座標を信用できるか（world.ts の judgeWorldTrust）。false なら world を使わない
+   * （φ は 2D の比から。速度をメートルに換算しない）。undefined なら信用するとして従来どおり使う
+   */
+  worldTrust?: boolean
+}
+
+/** 設計値・暫定：最下点の前後これだけのコマ数以内に、推定のコマ（主関節の 3 点のどれかが measured でない）があれば、最下点は推定 */
+export const BOTTOM_NEAR_FRAMES = 3
+/** 設計値・暫定：奥側で代用したコマの確信度の係数（コマ単位で掛けて平均する）。論文の値：隠れた側のばらつきは約 2 倍（PMID 37943887、抄録） */
+export const MIRRORED_FACTOR = 0.7
+/** 設計値・暫定：推定のコマの割合による確信度の下げ幅（確信度 ×(1 − この値×割合)） */
+export const ESTIMATED_PENALTY = 0.5
+
 export interface MeasureResult {
   metrics: RepMetrics
   /** このレップの平均の上げる速度（体節長/秒）。RepTracker が 1〜2 レップ目の基準にする */
@@ -419,20 +455,31 @@ export function measureRep(
   win: RepWindow,
   set: SetStats,
   lead?: MeasureFrame,
+  opts: MeasureOptions = {},
 ): MeasureResult {
   const vis = frames.filter((f) => f.visible && f.angle !== undefined && f.pts && f.pose)
   const missing = frames.length > 0 ? 1 - vis.length / frames.length : 1
   const visTerm = vis.length > 0 ? mean(vis.map((f) => visibilityTerm(f.minVis ?? 0))) : 0
-  const { view, viewOk, phi } = judgeView(vis, key)
+  const worldOk = opts.worldTrust !== false
+  const { view, viewOk, phi } = judgeView(vis, key, worldOk)
   const medA = median(set.segA)
   const medB = median(set.segB)
   const stability = segmentStability(vis, medA, medB)
 
+  // 見えない部分の補正（fill.ts）の印：推定のコマの割合、奥側で代用したコマの割合
+  const estimatedRatio = frames.length > 0 ? frames.filter(isEstimatedFrame).length / frames.length : 0
+  const mirroredRatio = frames.length > 0 ? frames.filter((f) => f.src && Object.values(f.src).includes('mirrored')).length / frames.length : 0
+  // 設計値・暫定：確信度 ×(1 − 0.5×推定の割合) ×（代用したコマは 0.7 倍のコマ単位の平均）
+  const conf = combineConfidence(visTerm, viewOk, stability, missing)
+    * (1 - ESTIMATED_PENALTY * estimatedRatio) * (1 - (1 - MIRRORED_FACTOR) * mirroredRatio)
   const metrics: RepMetrics = {
-    confidence: combineConfidence(visTerm, viewOk, stability, missing),
+    confidence: round(clamp(conf, 0, 1), 2),
     view,
     viewOk,
   }
+  if (estimatedRatio > 0) metrics.estimatedRatio = round(estimatedRatio, 2)
+  if (mirroredRatio > 0) metrics.mirrored = true
+  if (opts.worldTrust !== undefined) metrics.worldTrust = opts.worldTrust
   const placementOk = placementOkOf(frames)
   if (placementOk !== undefined) metrics.placementOk = placementOk
   if (phi !== undefined) metrics.phiDeg = phi
@@ -456,7 +503,7 @@ export function measureRep(
     const vNorm = meanV / refLen
     result.velocityNorm = vNorm
     // メートル換算は world があるときだけ（world は股関節が原点なので、長さのスケールだけ借りる）
-    const wl = median(set.worldLen)
+    const wl = worldOk ? median(set.worldLen) : undefined
     if (wl) metrics.concentricVelocity = round(vNorm * wl, 2)
     // 1〜2レップ目の最大に対する低下率。3レップ目以降は最初の2レップだけを基準にする
     const ref = set.firstVelocities.length < 2 ? Math.max(vNorm, ...set.firstVelocities) : Math.max(...set.firstVelocities)
@@ -470,13 +517,24 @@ export function measureRep(
   let bottom = vis[0]
   for (const f of vis) if ((f.angle as number) < (bottom.angle as number)) bottom = f
 
-  if (key === 'squat') measureSquat(metrics, vis, bottom, lead, refLen)
-  else if (key === 'bench') measureBench(metrics, result, vis, bottom, win, set, medB)
+  // 最下点が推定か：最下点の前後に、主関節の 3 点のどれかが measured でないコマがある（補間・代用・埋められなかった）
+  const notMeasuredMain = (f: MeasureFrame | undefined): boolean =>
+    !!f?.src && MAIN_JOINTS[key].some((j) => f.src?.[j] !== 'measured')
+  const bi = frames.indexOf(bottom)
+  for (let k = Math.max(0, bi - BOTTOM_NEAR_FRAMES); k <= Math.min(frames.length - 1, bi + BOTTOM_NEAR_FRAMES); k++) {
+    if (notMeasuredMain(frames[k])) { metrics.bottomEstimated = true; break }
+  }
+
+  // 安全に関わる崩れ（hip-rise・lean-back・knee-valgus）は、実測のコマだけから出す（推定のコマの値で断定しない）
+  const safeVis = vis.filter((f) => !isEstimatedFrame(f))
+
+  if (key === 'squat') measureSquat(metrics, vis, safeVis, bottom, lead, refLen)
+  else if (key === 'bench') measureBench(metrics, result, vis, safeVis, bottom, win, set, medB)
   else if (key === 'curl') measureCurl(metrics, vis, lead)
   else if (key === 'rdl') measureRdl(metrics, bottom)
-  else if (key === 'ohp') measureOhp(metrics, vis, bottom, lead)
+  else if (key === 'ohp') measureOhp(metrics, vis, safeVis, bottom, lead)
   else if (key === 'lateral') measureLateral(metrics, vis, bottom)
-  else if (key === 'pulldown') measurePulldown(metrics, vis, lead)
+  else if (key === 'pulldown') measurePulldown(metrics, vis, safeVis, lead)
   else if (key === 'ohext') measureOhext(metrics, vis, bottom)
   else measureBss(metrics, vis, bottom)
 
@@ -496,7 +554,7 @@ export function measureRep(
 }
 
 function measureSquat(
-  m: RepMetrics, vis: MeasureFrame[], bottom: MeasureFrame, lead: MeasureFrame | undefined, legLen: number,
+  m: RepMetrics, vis: MeasureFrame[], safeVis: MeasureFrame[], bottom: MeasureFrame, lead: MeasureFrame | undefined, legLen: number,
 ) {
   m.kneeFlexionBottom = round(180 - (bottom.angle as number), 1)
   const torso = vis.map((f) => f.angles?.torso).filter((v): v is number => v !== undefined)
@@ -535,7 +593,7 @@ function measureSquat(
   // 正面撮影のときだけ：膝の内側への倒れ込み（股関節-膝-足首の投影角の 180° からのずれ。膝が内側なら正）
   if (m.view === 'front') {
     let best: number | undefined
-    for (const f of vis) {
+    for (const f of safeVis) {
       const v = valgusDeg(f)
       if (v !== undefined && (best === undefined || v > best)) best = v
     }
@@ -560,7 +618,7 @@ function valgusDeg(f: MeasureFrame): number | undefined {
 }
 
 function measureBench(
-  m: RepMetrics, result: MeasureResult, vis: MeasureFrame[], bottom: MeasureFrame, win: RepWindow, set: SetStats,
+  m: RepMetrics, result: MeasureResult, vis: MeasureFrame[], safeVis: MeasureFrame[], bottom: MeasureFrame, win: RepWindow, set: SetStats,
   forearm: number,
 ) {
   // バー軌道のずれ：1レップ目の軌道との差の最大 ÷ 前腕の長さ（1レップ目は 0）
@@ -588,7 +646,7 @@ function measureBench(
     const torso = dist(sh, h0)
     if (torso > 0) {
       let max = 0
-      for (const f of vis) {
+      for (const f of safeVis) {
         if (f.t < win.minT || f.t > win.endT) continue
         const h = hipAt(f)
         if (h) max = Math.max(max, h0.y - h.y)
@@ -640,10 +698,10 @@ function measureRdl(m: RepMetrics, bottom: MeasureFrame) {
 }
 
 /** ohp：体幹の後傾の最大と開始時の後傾（反りの増加を見る）、最下点の肘の屈曲 */
-function measureOhp(m: RepMetrics, vis: MeasureFrame[], bottom: MeasureFrame, lead: MeasureFrame | undefined) {
+function measureOhp(m: RepMetrics, vis: MeasureFrame[], safeVis: MeasureFrame[], bottom: MeasureFrame, lead: MeasureFrame | undefined) {
   m.elbowFlexionBottom = round(180 - (bottom.angle as number), 1)
   const facing = facingOf(vis)
-  const max = maxLeanBack(vis, facing)
+  const max = maxLeanBack(safeVis, facing)
   if (max !== undefined) m.trunkLeanBack = max
   if (facing !== undefined) {
     const base = leanBack(lead ?? vis[0], facing)
@@ -663,8 +721,8 @@ function measureLateral(m: RepMetrics, vis: MeasureFrame[], bottom: MeasureFrame
 }
 
 /** pulldown：体幹の後傾の最大、体幹の振れ、上で伸ばしきったときの肘の内角 */
-function measurePulldown(m: RepMetrics, vis: MeasureFrame[], lead: MeasureFrame | undefined) {
-  const max = maxLeanBack(vis, facingOf(vis))
+function measurePulldown(m: RepMetrics, vis: MeasureFrame[], safeVis: MeasureFrame[], lead: MeasureFrame | undefined) {
+  const max = maxLeanBack(safeVis, facingOf(vis))
   if (max !== undefined) m.trunkLeanBack = max
   const tr = range(vis.map((f) => f.angles?.trunkSigned).filter((v): v is number => v !== undefined))
   if (tr !== undefined) m.torsoRange = round(tr, 1)

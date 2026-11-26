@@ -42,13 +42,16 @@ describe('judgeWorldTrust（world 座標を信用できるか）', () => {
     }
   })
 
-  it('z が 0 に潰れた（flat）：φ=45° では骨の長さの崩れで見つかる（90% 以上）。φ≤30° は判定 1〜3 では見つからない（記録）', () => {
-    expect(SETS - trusted({ camera: { yawDeg: 45 }, worldCollapse: 'flat' })).toBeGreaterThanOrEqual(SETS * 0.85)
-    // 仕様 3.5 の判定 1〜3 だけでは、真横に近い flat は検出できない（採用の基準 6 を満たさない）。isWorldDepthFlat（提案）で補う
-    expect(trusted({ camera: { yawDeg: 0 }, worldCollapse: 'flat' })).toBeGreaterThan(SETS * 0.5)
+  it('z が 0 に潰れた（flat）：全部の向き（0・15・30・45°）で、95% 以上のセットを false にする（判定 5 を組み込んだ）', () => {
+    for (const phi of [0, 15, 30, 45]) {
+      const t = trusted({ camera: { yawDeg: phi }, worldCollapse: 'flat' })
+      expect(SETS - t).toBeGreaterThanOrEqual(SETS * 0.95)
+    }
+    const r = judgeWorldTrust('squat', frames({ camera: { yawDeg: 0 }, worldCollapse: 'flat' }, 1))
+    expect(r.reasons).toContain('world 座標の奥行きが潰れています')
   })
 
-  it('提案：isWorldDepthFlat は flat をすべての向きで見つけ、正常・noisy を誤検出しない', () => {
+  it('isWorldDepthFlat は flat をすべての向きで見つけ、正常・noisy を誤検出しない', () => {
     for (const phi of [0, 15, 30, 45]) {
       for (let s = 0; s < 5; s++) {
         expect(isWorldDepthFlat(frames({ camera: { yawDeg: phi }, worldCollapse: 'flat' }, 500 + s))).toBe(true)

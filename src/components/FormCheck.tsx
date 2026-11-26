@@ -503,6 +503,8 @@ export default function FormCheck({
     fixedRef.current = snap ? { tiltDeg: snap.tiltDeg, segLen: snap.segA + snap.segB } : {}
     // 自分の基準は、撮影条件が合うときだけ可動域の判定（short-rom）に使う
     tracker.setBaseline(baseline && baselineCompat(baseline, conditionsOf([], snap)).ok ? toEngineBaseline(baseline) : undefined)
+    // 立位の骨の長さ：外れ値（骨より長すぎる位置・飛び）の判定の基準（動画ファイルは無いので、最初の 0.5 秒の実測から決める）
+    tracker.setRefLengths(snap?.segA, snap?.segB)
     if (file) {
       placementWinRef.current.clear()
       stopTilt()

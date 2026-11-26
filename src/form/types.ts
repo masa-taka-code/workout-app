@@ -107,6 +107,13 @@ export type ViewKind = 'side' | 'front' | 'oblique' | 'unknown'
 /** 撮影角度の良否：真横からのずれ ≤15° ok、15〜30° caution、>30° ng（正面の種目指標は別判定） */
 export type ViewOk = 'ok' | 'caution' | 'ng'
 
+/**
+ * 関節1点の出どころ（見えない部分の補正。fill.ts）。
+ * measured＝見えている（visibility が十分で外れ値でもない）／interpolated＝短い欠けを前後のコマから補間／
+ * mirrored＝手前の関節が長く見えず、奥側の同じ関節で代用／missing＝埋められなかった
+ */
+export type JointSource = 'measured' | 'interpolated' | 'mirrored' | 'missing'
+
 /** 1レップの計測値（推定を含む）。値が出せないものは undefined */
 export interface RepMetrics {
   /** 信頼度 0〜1（見えやすさ × 撮影角度 × 体節長の安定 × 欠損の少なさ）。0.6 未満は減点・原因判定に使わない */
@@ -118,6 +125,20 @@ export interface RepMetrics {
    * false のレップは回数には数えるが、減点・崩れの判定・採点の平均から外す。判定していない（古い記録・動画の一部）は undefined
    */
   placementOk?: boolean
+  /**
+   * レップの中で、必要な関節のどれかが measured でなかったコマ（補間・代用・埋められなかった）の割合 0〜1。
+   * 0 のときは付けない。信頼度は ×(1 − 0.5×この値)、安全に関わる崩れは 0.2 以上のとき出さない（設計値・暫定）
+   */
+  estimatedRatio?: number
+  /**
+   * 最下点（主関節の最小角度のコマ）の前後 3 コマ以内に、主関節の 3 点のどれかが measured でないコマがあったか。
+   * true のレップは「浅い」系の崩れの確信度を low にし、減点しない（深さは推定のため）
+   */
+  bottomEstimated?: boolean
+  /** 奥側の関節で代用したコマがあったか（確信度は代用したコマの分だけ ×0.7。設計値・暫定） */
+  mirrored?: boolean
+  /** world 座標を信用できたか（world.ts の judgeWorldTrust）。false のとき、φ は 2D の比で判定し、速度をメートルに換算しない。world が無いときは付けない */
+  worldTrust?: boolean
   /** 真横（lateral は正面）からのずれ φ（度。judgeView の値そのまま。world が無ければ undefined）。自分の基準の撮影条件の比較に使う */
   phiDeg?: number
   /** 上げる動作の平均速度（m/s、推定。腰＝squat、手首＝bench/curl の上下動から） */
@@ -269,6 +290,8 @@ export interface FormReport {
   trend?: string
   /** 自分の基準を使わなかった理由（撮影条件が基準と違うとき。画面の注記欄に出す） */
   baselineNote?: string
+  /** 見えなかった関節を補った・判定しなかったことの注記（1 行ずつ。画面の注記欄に出す。なければ undefined） */
+  notes?: string[]
   /** 必ず表示する注意（推定であること、痛みがあれば中止） */
   disclaimer: string
 }

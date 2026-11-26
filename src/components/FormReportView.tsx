@@ -246,6 +246,7 @@ export default function FormReportView({
           <p className="muted small">撮影条件が悪かった回：{repsText(badPlacement)}（減点・崩れの判定から外しています）</p>
         )}
         {report.baselineNote && <p className="muted small">{report.baselineNote}</p>}
+        {report.notes?.map(n => <p key={n} className="muted small">{n}</p>)}
 
         {!readOnly && !pain && (
           <button type="button" className="btn frv-pain-btn" onClick={() => setPain(true)}>

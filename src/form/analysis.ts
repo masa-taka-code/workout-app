@@ -13,6 +13,13 @@ import type {
 
 /** 信頼度がこれ未満のレップは、減点・原因判定・効き具合の計算に使わない */
 const MIN_CONFIDENCE = 0.6
+/**
+ * 設計値・暫定：推定のコマ（見えなかった関節を補間・代用したコマ）の割合がこれ以上のレップでは、安全に関わる崩れ（SAFETY_CODES）を出さない。
+ * 推定した値だけを根拠に、ケガに関わる注意を断定しない（仕様 3.7）。論文の値ではない
+ */
+export const SAFETY_MAX_ESTIMATED = 0.2
+/** 設計値・暫定：推定のコマの割合がこれ以上のレップを、画面の注記（補った回）に出す */
+export const ESTIMATE_NOTE_MIN = 0.05
 
 // ---- ストレッチ（B-1） ----
 /** squat：膝屈曲の基準（Kubo 2019 のハーフ 90° / フル 140°） */
@@ -259,14 +266,21 @@ const TEMPO_CODES: readonly string[] = ['fast-down', 'rom-drop', 'short-rom']
  * personal は撮影条件が合う自分の基準（無ければ一般のしきい値。ctx.baseline の旧形式の基準は personal が無いときだけ使う）。
  * 安全に関わる崩れ（SAFETY_CODES）とかかとの浮きは、基準で緩めも厳しくもせず、常に一般のしきい値で判定する。
  */
-function detectFaults(r: RepResult, ctx: FormContext, personal?: PersonalBaseline): Flag[] {
+function detectFaults(r: RepResult, ctx: FormContext, personal?: PersonalBaseline, allowEstimatedSafety = false): Flag[] {
   const m = r.metrics
   const v1 = new Set(r.issues.map(i => i.code))
   const out: Flag[] = []
   const below = (code: string) => !!personal?.belowGeneral.includes(code)
   /** 基準を使った判定の確信度の上限：一般のしきい値でも出ていた基準なら low、浅さの判定は mid */
   const capFor = (code: string): Confidence | undefined => (below(code) ? 'low' : BASELINE_DEPTH_CODES.includes(code) ? 'mid' : undefined)
-  const add = (code: string, magnitude = 0, cap?: Confidence) => out.push({ code, magnitude: Math.max(0, magnitude), cap })
+  // 推定の多いレップ（見えなかった関節を補った割合が大きい）では、安全に関わる崩れを出さない。
+  // 最下点が推定のレップでは、浅さ・伸びきりの崩れの確信度を low にする（深さを断定できないため）
+  const estimatedHeavy = (m?.estimatedRatio ?? 0) >= SAFETY_MAX_ESTIMATED
+  const add = (code: string, magnitude = 0, cap?: Confidence) => {
+    if (!allowEstimatedSafety && estimatedHeavy && SAFETY_CODES.includes(code)) return
+    const c = m?.bottomEstimated && BASELINE_DEPTH_CODES.includes(code) ? 'low' : cap
+    out.push({ code, magnitude: Math.max(0, magnitude), cap: c })
+  }
   const stat = (metric: BaselineMetric) => personal?.stats[metric]
   /** 基準の中央値 − 余裕（これを下回ったら浅い）。基準が無ければ undefined */
   const lowerLimit = (metric: BaselineMetric): number | undefined => {
@@ -561,6 +575,41 @@ function targetShare(id: string, hip: number | undefined): number | undefined {
   return undefined
 }
 
+// ---- 見えなかった関節の補正の注記 ----
+
+const repList = (idx: number[]) => idx.map(i => `${i}回目`).join('、')
+
+/**
+ * 見えなかった関節を補った・判定しなかったことの注記（画面の注記欄に 1 行ずつ出す）。何もなければ空。
+ * 推定した値には必ず印を付け、推定だけを根拠に安全に関わる崩れを断定しない（仕様 3.7）。
+ */
+function estimateNotes(reps: RepResult[], usable: RepResult[], ctx: FormContext, personal?: PersonalBaseline): string[] {
+  const notes: string[] = []
+  const withM = reps.filter(r => r.metrics)
+  const filled = withM.filter(r => (r.metrics?.estimatedRatio ?? 0) >= ESTIMATE_NOTE_MIN && !r.metrics?.mirrored)
+  if (filled.length) notes.push(`関節が一時的に見えなかった回：${repList(filled.map(r => r.index))}（前後から補いました）`)
+  const mirrored = withM.filter(r => r.metrics?.mirrored)
+  if (mirrored.length) notes.push(`手前の関節が長く見えず、奥側で代用した回：${repList(mirrored.map(r => r.index))}（確信度を下げています）`)
+  const bottom = withM.filter(r => r.metrics?.bottomEstimated)
+  if (bottom.length) notes.push(`最下点が見えなかった回：${repList(bottom.map(r => r.index))}（深さの減点はしていません）`)
+  // 推定が多くて判定しなかった、安全に関わる崩れ
+  const hidden = new Map<string, number[]>()
+  for (const r of usable) {
+    if ((r.metrics?.estimatedRatio ?? 0) < SAFETY_MAX_ESTIMATED) continue
+    const shown = new Set(detectFaults(r, ctx, personal).map(f => f.code))
+    for (const f of detectFaults(r, ctx, personal, true)) {
+      if (SAFETY_CODES.includes(f.code) && !shown.has(f.code)) hidden.set(f.code, [...(hidden.get(f.code) ?? []), r.index])
+    }
+  }
+  for (const [code, idx] of hidden) {
+    notes.push(`見えない時間があったため「${adviceFor(ctx.key, code).label}」は判定しませんでした（${repList(idx)}）`)
+  }
+  if (withM.some(r => r.metrics?.worldTrust === false)) {
+    notes.push('奥行きの情報が不安定だったため、撮影の向きは画面上の比から判定し、速度（m/s）は出していません')
+  }
+  return notes
+}
+
 // ---- 前回との比較 ----
 
 function trendOf(report: Pick<FormReport, 'stretch' | 'faults'>, ctx: FormContext): string | undefined {
@@ -606,6 +655,7 @@ export function analyzeSet(reps: RepResult[], rawCtx: FormContext): FormReport {
 
   // 全レップが低信頼度：撮り直しをすすめ、ストレッチ・効き具合・原因は出さない
   if (reps.length > 0 && usable.length === 0) {
+    const lowNotes = estimateNotes(reps, [], rawCtx)
     const allBadPlacement = reps.every(r => r.metrics?.placementOk === false)
     const reason = allBadPlacement
       ? '撮影条件（全身の枠・距離・向き・スマホの傾き・明るさ）が悪く、信頼できる計測になりませんでした。案内に従って置き直し、撮り直してください。'
@@ -619,10 +669,12 @@ export function analyzeSet(reps: RepResult[], rawCtx: FormContext): FormReport {
       faults: [],
       disclaimer: DISCLAIMER,
       ...(baselineNote ? { baselineNote } : {}),
+      ...(lowNotes.length ? { notes: lowNotes } : {}),
     }
   }
 
   const stretch = stretchOf(usable, ctx)
+  const notes = estimateNotes(reps, usable, ctx, personal)
 
   // 効き具合
   const emp = emphasisOf(usable, ctx)
@@ -687,6 +739,7 @@ export function analyzeSet(reps: RepResult[], rawCtx: FormContext): FormReport {
     primaryCue,
     disclaimer: DISCLAIMER,
     ...(baselineNote ? { baselineNote } : {}),
+    ...(notes.length ? { notes } : {}),
   }
   report.trend = trendOf(report, ctx)
   return report
