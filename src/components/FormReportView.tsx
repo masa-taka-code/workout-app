@@ -5,7 +5,7 @@ import type { EmphasisTarget, FaultFinding, FormReport, RepResult } from '../for
 import BodyMap from './BodyMap'
 import {
   CAUSE_LABEL, SAFETY_FAULT_CODES, barWidth, bestRep, conditionWord, confidenceDots, groupFaults,
-  isReferenceRep, levelIndex, onlyLowConfidence, pctText, repsText, shareText,
+  badPlacementReps, isReferenceRep, levelIndex, onlyLowConfidence, pctText, repsText, shareText,
 } from './reportFormat'
 import './FormReportView.css'
 
@@ -127,6 +127,7 @@ export default function FormReportView({
   onApply, onRetake, onSaveBaseline,
 }: FormReportViewProps) {
   const analyzed = reps.length
+  const badPlacement = badPlacementReps(reps)
   const [count, setCount] = useState(analyzed)
   const [pain, setPain] = useState(false)
 
@@ -215,6 +216,10 @@ export default function FormReportView({
             <strong>フォーム {Math.round(report.overallScore)}点</strong>
             <span className="muted">・撮影条件：{conditionWord(report.confidence)}</span>
           </p>
+        )}
+
+        {badPlacement.length > 0 && (
+          <p className="muted small">撮影条件が悪かった回：{repsText(badPlacement)}（減点・崩れの判定から外しています）</p>
         )}
 
         {!readOnly && !pain && (
@@ -347,7 +352,7 @@ export default function FormReportView({
                 return (
                   <tr key={r.index} className={ref ? 'frv-ref' : undefined}>
                     <th scope="row">{r.index}{ref && <span className="frv-ref-tag">参考</span>}</th>
-                    <td>{Math.round(r.score)}</td>
+                    <td>{r.metrics?.placementOk === false ? '—' : Math.round(r.score)}</td>
                     <td>{Math.round(r.minAngle)}°</td>
                     <td>{r.eccentricSec.toFixed(1)}秒</td>
                     <td>{m?.velocityLossPct !== undefined ? `${Math.round(m.velocityLossPct)}%` : '—'}</td>

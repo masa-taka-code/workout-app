@@ -112,6 +112,11 @@ export interface RepMetrics {
   confidence: number
   view: ViewKind
   viewOk: ViewOk
+  /**
+   * 撮影条件（枠・距離・向き・傾き・見えやすさ）が許容内だったか。レップのフレームの半分以上が ng なら false。
+   * false のレップは回数には数えるが、減点・崩れの判定・採点の平均から外す。判定していない（古い記録・動画の一部）は undefined
+   */
+  placementOk?: boolean
   /** 上げる動作の平均速度（m/s、推定。腰＝squat、手首＝bench/curl の上下動から） */
   concentricVelocity?: number
   /** そのセットの最初の2レップの最大速度に対する低下率（%） */
@@ -263,6 +268,23 @@ export interface FormReport {
   disclaimer: string
 }
 
+/**
+ * 開始前の立位フレームから取る、その人・その撮影の基準値（「自分の基準」で使う。値だけで UI は無い）。
+ * 座標は縦横比をそろえた 2D で、画面の高さを 1 とした長さ。体幹角・傾きは傾き補正前の値。
+ */
+export interface StandingSnapshot {
+  /** 脚の種目は太もも、腕の種目は上腕の長さ */
+  segA: number
+  /** 脚の種目はすね、腕の種目は前腕の長さ */
+  segB: number
+  /** 立位の体幹角（鉛直からの前傾、度） */
+  trunkLeanDeg?: number
+  /** 真横からのずれ φ（度。world があるときだけ） */
+  phiDeg?: number
+  /** スマホの傾き（度。不明なら undefined） */
+  tiltDeg?: number
+}
+
 /** セッションをまたいだ原因判定のために保存する、1セット分の要約 */
 export interface FormSessionSummary {
   date: string
@@ -276,6 +298,8 @@ export interface FormSessionSummary {
   /** 崩れの code ごとの発生レップ数 */
   faultCounts: Record<string, number>
   confidence: number
+  /** 開始前の立位から取った基準値（撮影条件の判定を通ったライブ撮影のときだけ） */
+  standing?: StandingSnapshot
 }
 
 /** 分析に渡す文脈 */
@@ -290,4 +314,8 @@ export interface FormContext {
   history: FormSessionSummary[]
   baseline?: Baseline
   targetId?: string
+  /** スマホの水平が不明（センサー非対応・拒否・動画ファイル）だったか。体幹の前傾の崩れの確信度を low にする */
+  tiltUnknown?: boolean
+  /** 開始前の立位から取った基準値（要約に保存する） */
+  standing?: StandingSnapshot
 }

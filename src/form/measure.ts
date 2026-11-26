@@ -8,6 +8,7 @@ import type { FormExerciseKey, Landmark, Pose, RepMetrics, ViewKind, ViewOk } fr
 import { LM } from './types'
 import { jointAngle, signedTiltFromVertical, tiltFromVertical } from './geometry'
 import { CONFIG, MIN_VISIBILITY, SIDE_INDEX, isLegKey } from './rules'
+import type { PlacementLevel } from './placement'
 import type { Joint, Side } from './rules'
 
 const RAD = 180 / Math.PI
@@ -76,6 +77,22 @@ export interface MeasureFrame {
   segB?: number
   /** 脚（squat）または腕（bench/curl）の長さ（world、m） */
   worldLen?: number
+  /** このフレームの撮影条件の判定（直近 1 秒の中央値）。判定していなければ undefined */
+  placement?: PlacementLevel
+}
+
+/** 設計値・暫定：レップのフレームのうち、撮影条件が ng のものがこの割合以上なら、そのレップを撮影条件不良（placementOk=false）にする */
+export const PLACEMENT_NG_RATIO = 0.5
+
+/**
+ * 撮影条件が許容内だったか。判定したフレーム（ok / caution / ng）の半分以上が ng なら false。
+ * 判定したフレームが無ければ undefined。
+ */
+export function placementOkOf(frames: MeasureFrame[]): boolean | undefined {
+  const judged = frames.filter((f) => f.placement === 'ok' || f.placement === 'caution' || f.placement === 'ng')
+  if (judged.length === 0) return undefined
+  const ng = judged.filter((f) => f.placement === 'ng').length
+  return ng / judged.length < PLACEMENT_NG_RATIO
 }
 
 /** 体節長（2D）。squat は太もも・すね、bench/curl は上腕・前腕 */
@@ -109,6 +126,7 @@ export function makeFrame(
     world?: Pose
     angle: number
     angles: Record<string, number>
+    placement?: PlacementLevel
   },
 ): MeasureFrame {
   let minVis = 1
@@ -127,6 +145,7 @@ export function makeFrame(
     segA: seg?.a,
     segB: seg?.b,
     worldLen: src.world ? worldLength(key, src.world, src.side) : undefined,
+    placement: src.placement,
   }
 }
 
@@ -414,6 +433,8 @@ export function measureRep(
     view,
     viewOk,
   }
+  const placementOk = placementOkOf(frames)
+  if (placementOk !== undefined) metrics.placementOk = placementOk
   const result: MeasureResult = { metrics }
   if (vis.length < 2 || !medA || !medB) return result
 

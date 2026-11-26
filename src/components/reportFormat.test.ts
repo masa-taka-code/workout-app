@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { FaultFinding, RepResult } from '../form/types'
 import {
-  barWidth, bestRep, conditionWord, confidenceDots, groupFaults, isReferenceRep,
+  badPlacementReps, barWidth, bestRep, conditionWord, confidenceDots, groupFaults, isReferenceRep,
   levelIndex, onlyLowConfidence, pctText, repsText, roundShare, shareText,
 } from './reportFormat'
 
@@ -65,5 +65,16 @@ describe('reportFormat', () => {
     expect(pctText(0.846)).toBe('85%')
     expect(barWidth(1.5)).toBe(100)
     expect(barWidth(0.333)).toBe(33)
+  })
+})
+
+describe('撮影条件が悪かった回', () => {
+  it('placementOk=false のレップ番号を返し、参考値として扱う', () => {
+    const bad: RepResult = { ...rep(2, 90, 0.9), metrics: { confidence: 0.9, view: 'side', viewOk: 'ok', placementOk: false } }
+    const reps = [rep(1, 80, 0.9), bad, rep(3, 70)]
+    expect(badPlacementReps(reps)).toEqual([2])
+    expect(isReferenceRep(bad)).toBe(true)
+    expect(isReferenceRep(reps[0])).toBe(false)
+    expect(badPlacementReps([rep(1, 80, 0.9)])).toEqual([])
   })
 })

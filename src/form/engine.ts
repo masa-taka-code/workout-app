@@ -11,6 +11,8 @@ import type { Joint, RepStats, Side } from './rules'
 import { LM } from './types'
 import { makeFrame, measureRep, median } from './measure'
 import type { MeasureFrame, SetStats } from './measure'
+import type { PlacementLevel } from './placement'
+import { correctTilt, needsTiltCorrection } from './tilt'
 
 /** 外れ値対策の中央値フィルタの窓（直近のフレーム数）。MediaPipe が内部で平滑化するので、それ以上はかけない */
 const MEDIAN_WINDOW = 3
@@ -97,6 +99,14 @@ const round = (v: number, digits: number): number => {
   return Math.round(v * f) / f
 }
 
+/** push の追加の入力（撮影条件の判定と、スマホの傾き） */
+export interface PushOptions {
+  /** このフレームの撮影条件の判定（placement.ts。直近 1 秒の中央値）。無ければ判定しない */
+  placement?: PlacementLevel
+  /** スマホの傾き（度、画像上の向き。tilt.ts）。caution の範囲なら、座標を −傾き 分回してから計測する。不明なら undefined */
+  tiltDeg?: number
+}
+
 /** 1セット分のフレームを順に受け取り、レップを数えて採点する */
 export class RepTracker {
   readonly key: FormExerciseKey
@@ -128,8 +138,10 @@ export class RepTracker {
    * timeMs は単調増加するミリ秒（performance.now() など）。
    * world は worldLandmarks（メートル。あれば撮影角度と速度の換算に使う。無くても動く）。
    */
-  push(pose: Pose | undefined, timeMs: number, world?: Pose): FrameResult {
+  push(rawPose: Pose | undefined, timeMs: number, world?: Pose, opts: PushOptions = {}): FrameResult {
     const cfg = CONFIG[this.key]
+    // 傾きが caution のときは、鉛直を基準にする計測（体幹・すねの前傾など）の前に座標を補正する（角度・長さは変わらない）
+    const pose = rawPose && needsTiltCorrection(opts.tiltDeg) ? correctTilt(rawPose, opts.tiltDeg) : rawPose
     const prevSide = this.side
     const pts = pose ? this.pickSide(pose, cfg.joints) : undefined
     if (!pts || !pose || !this.side) {
@@ -148,7 +160,7 @@ export class RepTracker {
     }
 
     const a = angles[cfg.main]
-    const frame = makeFrame(this.key, { t: timeMs, side: this.side, pts, pose, world, angle: a, angles })
+    const frame = makeFrame(this.key, { t: timeMs, side: this.side, pts, pose, world, angle: a, angles, placement: opts.placement })
     if (frame.segA !== undefined && frame.segB !== undefined) {
       this.stats.segA.push(frame.segA)
       this.stats.segB.push(frame.segB)
@@ -354,25 +366,33 @@ export class RepTracker {
     const eccentricSec = round(cfg.eccentricFirst ? first : second, 2)
     const concentricSec = round(cfg.eccentricFirst ? second : first, 2)
 
+    // 計測を先にする：撮影条件が悪いレップ（placementOk=false）は、減点・崩れの判定・基準づくりから外す
+    const meas = measureRep(
+      this.key, rep.frames, { startT: rep.startT, minT: rep.minT, endT }, this.stats, rep.lead,
+    )
+    const excluded = meas.metrics.placementOk === false
+
     const stats: RepStats = {
       minAngle: rep.minAngle, maxAngle, ranges: rep.ranges, hipY: rep.hipY, kneeY: rep.kneeY,
     }
-    const issues: Issue[] = formIssues(this.key, stats)
+    const issues: Issue[] = excluded ? [] : formIssues(this.key, stats)
 
     let romPct: number | undefined
-    if (this.baseline && this.baseline.romDeg > 0) {
+    if (!excluded && this.baseline && this.baseline.romDeg > 0) {
       romPct = round(romDeg / this.baseline.romDeg, 2)
       if (romPct < SHORT_ROM_RATIO) {
         const n = Math.round((1 - romPct) * 100)
         issues.push(makeIssue('short-rom', `いつもより可動域が${n}%狭い`, '基準動画と同じ深さ・伸びまで動かしましょう', 20))
       }
     }
-    if (this.firstRom === undefined) this.firstRom = romDeg
-    else if (romDeg < this.firstRom * ROM_DROP_RATIO) {
-      issues.push(makeIssue('rom-drop', '疲れて可動域が狭くなっています', '可動域を保てる回数で止めるか、重量を下げましょう', 10))
-    }
-    if (eccentricSec < FAST_DOWN_SEC) {
-      issues.push(makeIssue('fast-down', '下ろす動作が速すぎます', '1〜3秒かけてコントロールして下ろしましょう', 10))
+    if (!excluded) {
+      if (this.firstRom === undefined) this.firstRom = romDeg
+      else if (romDeg < this.firstRom * ROM_DROP_RATIO) {
+        issues.push(makeIssue('rom-drop', '疲れて可動域が狭くなっています', '可動域を保てる回数で止めるか、重量を下げましょう', 10))
+      }
+      if (eccentricSec < FAST_DOWN_SEC) {
+        issues.push(makeIssue('fast-down', '下ろす動作が速すぎます', '1〜3秒かけてコントロールして下ろしましょう', 10))
+      }
     }
 
     const penalty = issues.reduce((s, i) => s + i.penalty, 0)
@@ -387,15 +407,14 @@ export class RepTracker {
       maxAngle: round(maxAngle, 1),
       issues,
     }
-    const meas = measureRep(
-      this.key, rep.frames, { startT: rep.startT, minT: rep.minT, endT }, this.stats, rep.lead,
-    )
     result.metrics = meas.metrics
-    // 速度低下の基準は最初の2レップ。バー軌道の基準は1レップ目
-    if (meas.velocityNorm !== undefined && this.stats.firstVelocities.length < 2) {
+    // 速度低下の基準は最初の2レップ。バー軌道の基準は1レップ目（撮影条件が悪いレップは基準にしない）
+    if (!excluded && meas.velocityNorm !== undefined && this.stats.firstVelocities.length < 2) {
       this.stats.firstVelocities.push(meas.velocityNorm)
     }
-    if (this.reps.length === 0 && meas.path) this.stats.firstPath = meas.path
+    // 1レップ目（撮影条件が悪い回は数えない）の軌道を基準にする
+    const isFirstGood = this.reps.every(r => r.metrics?.placementOk === false)
+    if (!excluded && isFirstGood && meas.path) this.stats.firstPath = meas.path
     this.reps.push(result)
 
     const worst = issues.reduce<Issue | undefined>((w, i) => (!w || i.penalty > w.penalty ? i : w), undefined)
@@ -416,6 +435,11 @@ export class RepTracker {
 export function summarizeSet(reps: RepResult[], key?: FormExerciseKey): SetSummary {
   if (reps.length === 0) return { reps: 0, avgScore: 0, mainIssues: [], lengthenedOk: false }
 
+  // 撮影条件が悪かったレップ（placementOk=false）は回数には数えるが、平均点・崩れ・可動域の判定からは外す
+  const total = reps.length
+  const judged = reps.filter((r) => r.metrics?.placementOk !== false)
+  if (judged.length === 0) return { reps: total, avgScore: 0, mainIssues: [], lengthenedOk: false }
+  reps = judged
   const avgScore = Math.round(reps.reduce((s, r) => s + r.score, 0) / reps.length)
 
   const groups = new Map<string, { issue: Issue; count: number }>()
@@ -440,7 +464,7 @@ export function summarizeSet(reps: RepResult[], key?: FormExerciseKey): SetSumma
     else if (key === 'curl') lengthenedOk = !bad('partial-bottom')
     else lengthenedOk = !bad('shallow') && !bad('partial-bottom')
   }
-  return { reps: reps.length, avgScore, mainIssues, lengthenedOk }
+  return { reps: total, avgScore, mainIssues, lengthenedOk }
 }
 
 /** 良いフォームのレップから基準を作る */

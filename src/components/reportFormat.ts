@@ -15,9 +15,14 @@ export function conditionWord(confidence: number): string {
   return 'よくない（参考値）'
 }
 
-/** 信頼度 0.6 未満のレップは参考値 */
+/** 信頼度 0.6 未満、または撮影条件が悪かった（placementOk=false）レップは参考値 */
 export function isReferenceRep(rep: RepResult): boolean {
-  return rep.metrics !== undefined && rep.metrics.confidence < 0.6
+  return rep.metrics !== undefined && (rep.metrics.confidence < 0.6 || rep.metrics.placementOk === false)
+}
+
+/** 撮影条件が悪かったレップの番号（回数には数えるが、減点・崩れの判定から外した回） */
+export function badPlacementReps(reps: RepResult[]): number[] {
+  return reps.filter(r => r.metrics?.placementOk === false).map(r => r.index)
 }
 
 /** 配分（0〜1）を 5% 刻みに丸めた数字（%）。例 0.58 → 60 */

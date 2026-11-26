@@ -67,6 +67,7 @@
 .fc-sub-controls .btn { flex: 1; min-height: 48px; min-width: 0; padding: 0 8px; }
 .fc-file-error { margin: 0; padding: 12px; border: 1px solid var(--bad-text); border-radius: 8px; background: var(--bad-weak); color: var(--bad-text); }
 .fc-armed-help { margin: 0; font-size: 16px; }
+.fc-armed-list { padding-left: 1.2em; }
 .fc-empty { padding: 16px; display: flex; flex-direction: column; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
 .fc-empty p { margin: 0; }
 .fc-from-file { align-self: flex-start; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border-strong); }

@@ -5,7 +5,7 @@ import {
 import type { AutoEndState } from './capture'
 import { bssPose, lateralPose, ohpPose, rdlPose } from './testPoses'
 import { LM } from './types'
-import type { Pose, RepResult } from './types'
+import type { FormExerciseKey, Pose, RepResult } from './types'
 
 function rep(index: number, codes: string[], velocityLossPct?: number): RepResult {
   return {
@@ -129,7 +129,13 @@ describe('自動終了・セット分割', () => {
   })
 })
 
-describe('置き場所の判定', () => {
+describe('置き場所の判定（向きの部分）', () => {
+  /** 向き（φ・肩幅比）だけの良否。枠・距離・傾き・見えやすさは placement.test.ts */
+  const viewLevel = (key: FormExerciseKey, pose: Pose | undefined, world?: Pose): string => {
+    const r = judgePlacement(key, [{ pose, world }])
+    if (r.level === 'hidden') return 'hidden'
+    return r.reasons.find(x => x.kind === 'view')?.severity ?? 'ok'
+  }
   const blank = (): Pose => Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, z: 0, visibility: 0 }))
   const sidePose = (): Pose => {
     const p = blank()
@@ -140,8 +146,8 @@ describe('置き場所の判定', () => {
   }
 
   it('姿勢が無い・関節が見えないときは hidden', () => {
-    expect(judgePlacement('bench', undefined)).toBe('hidden')
-    expect(judgePlacement('bench', blank())).toBe('hidden')
+    expect(viewLevel('bench', undefined)).toBe('hidden')
+    expect(viewLevel('bench', blank())).toBe('hidden')
   })
 
   it('world の肩の向きが真横なら ok、正面なら ng', () => {
@@ -151,8 +157,8 @@ describe('置き場所の判定', () => {
       p[LM.rightShoulder] = { x: sx, y: 0, z: sz }
       return p
     }
-    expect(judgePlacement('bench', sidePose(), w(0, 0.2))).toBe('ok')
-    expect(judgePlacement('bench', sidePose(), w(0.2, 0))).toBe('ng')
+    expect(viewLevel('bench', sidePose(), w(0, 0.2))).toBe('ok')
+    expect(viewLevel('bench', sidePose(), w(0.2, 0))).toBe('ng')
   })
 
   it('lateral は正面が ok、真横が ng。ほかの新種目は真横が ok、正面が ng（world あり）', () => {
@@ -162,34 +168,34 @@ describe('置き場所の判定', () => {
       p[LM.rightShoulder] = { x: sx, y: 0, z: sz }
       return p
     }
-    expect(judgePlacement('lateral', lateralPose(10), w(0.2, 0))).toBe('ok')
-    expect(judgePlacement('lateral', lateralPose(10), w(0, 0.2))).toBe('ng')
+    expect(viewLevel('lateral', lateralPose(10), w(0.2, 0))).toBe('ok')
+    expect(viewLevel('lateral', lateralPose(10), w(0, 0.2))).toBe('ng')
     // 正面から 45° ずれ（φ=45°）は ng、20° ずれ（φ=70°）は caution
-    expect(judgePlacement('lateral', lateralPose(10), w(0.14, 0.14))).toBe('ng')
-    expect(judgePlacement('lateral', lateralPose(10), w(0.2 * Math.sin(70 * RAD), 0.2 * Math.cos(70 * RAD)))).toBe('caution')
+    expect(viewLevel('lateral', lateralPose(10), w(0.14, 0.14))).toBe('ng')
+    expect(viewLevel('lateral', lateralPose(10), w(0.2 * Math.sin(70 * RAD), 0.2 * Math.cos(70 * RAD)))).toBe('caution')
     const poses = { rdl: rdlPose(170), ohp: sidePose(), pulldown: sidePose(), ohext: sidePose(), bss: bssPose(170) }
     for (const [k, pose] of Object.entries(poses) as [keyof typeof poses, Pose][]) {
-      expect(judgePlacement(k, pose, w(0, 0.2))).toBe('ok')
-      expect(judgePlacement(k, pose, w(0.2, 0))).toBe('ng')
+      expect(viewLevel(k, pose, w(0, 0.2))).toBe('ok')
+      expect(viewLevel(k, pose, w(0.2, 0))).toBe('ng')
     }
   })
 
   it('world が無いときは 2D の肩幅 ÷ 胴で見る。lateral は正面が ok・真横が ng、ほかの新種目は真横が ok', () => {
-    expect(judgePlacement('lateral', lateralPose(10))).toBe('ok')
-    expect(judgePlacement('rdl', rdlPose(170))).toBe('ok')
-    expect(judgePlacement('ohp', ohpPose(170))).toBe('ok')
-    expect(judgePlacement('bss', bssPose(170))).toBe('ok')
+    expect(viewLevel('lateral', lateralPose(10))).toBe('ok')
+    expect(viewLevel('rdl', rdlPose(170))).toBe('ok')
+    expect(viewLevel('ohp', ohpPose(170))).toBe('ok')
+    expect(viewLevel('bss', bssPose(170))).toBe('ok')
     // 肩と腰が重なる真横の姿勢
     const sideLike = lateralPose(10).map((p) => ({ ...p }))
     sideLike[LM.rightShoulder] = { ...sideLike[LM.leftShoulder], x: sideLike[LM.leftShoulder].x + 0.01 }
     sideLike[LM.rightHip] = { ...sideLike[LM.leftHip], x: sideLike[LM.leftHip].x + 0.01 }
-    expect(judgePlacement('lateral', sideLike)).toBe('ng')
-    expect(judgePlacement('ohp', sideLike)).toBe('ok')
+    expect(viewLevel('lateral', sideLike)).toBe('ng')
+    expect(viewLevel('ohp', sideLike)).toBe('ok')
   })
 
   it('lateral は片側の腕・腰が見えていれば hidden にならない。両側とも見えなければ hidden', () => {
-    expect(judgePlacement('lateral', lateralPose(10, 10, 0, { visRight: 0 }))).not.toBe('hidden')
-    expect(judgePlacement('lateral', lateralPose(10, 10, 0, { visLeft: 0, visRight: 0 }))).toBe('hidden')
+    expect(viewLevel('lateral', lateralPose(10, 10, 0, { visRight: 0 }))).not.toBe('hidden')
+    expect(viewLevel('lateral', lateralPose(10, 10, 0, { visLeft: 0, visRight: 0 }))).toBe('hidden')
   })
 })
 

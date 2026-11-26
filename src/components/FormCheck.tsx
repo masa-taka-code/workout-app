@@ -3,7 +3,7 @@ import type { ChangeEvent } from 'react'
 import type { PoseLandmarker } from '@mediapipe/tasks-vision'
 import type { Exercise } from '../types'
 import type {
-  Baseline, FormContext, FormExerciseKey, FormReport, FormSessionSummary, RepResult,
+  Baseline, FormContext, FormExerciseKey, FormReport, FormSessionSummary, RepResult, StandingSnapshot,
 } from '../form/types'
 import { RepTracker, baselineFrom, setupGuide } from '../form/engine'
 import { analyzeSet, emphasisTargets } from '../form/analysis'
@@ -15,9 +15,14 @@ import { toAspectCorrected } from '../form/geometry'
 import { PLACEMENT_VOICE, createVoice } from '../form/voice'
 import type { FormVoice } from '../form/voice'
 import {
-  initialAutoEnd, formatClock, judgePlacement, pickLiveCue, stepAutoEnd, stepAutoStart,
+  initialAutoEnd, formatClock, pickLiveCue, stepAutoEnd, stepAutoStart,
 } from '../form/capture'
 import type { AutoEndState, AutoStartState, Placement } from '../form/capture'
+import { PlacementWindow, standingSnapshot } from '../form/placement'
+import type { PlacementReason, PlacementResult } from '../form/placement'
+import { imageTilt } from '../form/tilt'
+import { requestTiltPermission, startTiltSensor } from '../form/tiltSensor'
+import type { TiltSensor } from '../form/tiltSensor'
 import FormReportView from './FormReportView'
 import './FormCheck.css'
 
@@ -68,8 +73,8 @@ const FILE_TIP = 'スローモーション・ズームは使わず、真横か�
 /** 待機中の置き直しの表示（色だけに頼らず、記号と語を添える） */
 const PLACEMENT_VIEW: Record<Placement, { word: string; cls: string; chip: string }> = {
   ok: { word: 'OK', cls: 'ok', chip: '良い' },
-  caution: { word: '△ 斜め', cls: 'caution', chip: 'ふつう' },
-  ng: { word: '× 正面', cls: 'ng', chip: 'よくない' },
+  caution: { word: '△ 要調整', cls: 'caution', chip: 'ふつう' },
+  ng: { word: '× 置き直し', cls: 'ng', chip: 'よくない' },
   hidden: { word: '× 映っていない', cls: 'ng', chip: '映っていません' },
 }
 
@@ -117,6 +122,12 @@ export default function FormCheck({
   const [aspect, setAspect] = useState(3 / 4)
   const [phase, setPhase] = useState<Phase>('idle')
   const [placement, setPlacement] = useState<Placement>('hidden')
+  /** 待機中の置き直しの案内（placement.ts の reasons） */
+  const [reasons, setReasons] = useState<PlacementReason[]>([])
+  /** スマホの水平が測れたか（測れないと体幹の前傾の崩れの確信度を low にする） */
+  const [tiltKnown, setTiltKnown] = useState(false)
+  /** 開始前の立位から取った基準値（「自分の基準」用。画面には出さない） */
+  const [standing, setStanding] = useState<StandingSnapshot | undefined>(undefined)
   const [repCount, setRepCount] = useState(0)
   const [cueText, setCueText] = useState<string>()
   const [finished, setFinished] = useState<RepResult[] | null>(null)
@@ -141,6 +152,12 @@ export default function FormCheck({
   const cueTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const placementRef = useRef<{ shown: Placement; cand: Placement; since: number }>({ shown: 'hidden', cand: 'hidden', since: 0 })
   const lastFileTimeRef = useRef(-1)
+  /** 直近 1 秒の置き場所の入力（中央値で判定する） */
+  const placementWinRef = useRef(new PlacementWindow())
+  const reasonsKeyRef = useRef('')
+  /** スマホの傾きセンサー（ライブ撮影のみ。許可されない・非対応なら undefined＝水平は「不明」） */
+  const tiltRef = useRef<TiltSensor | undefined>(undefined)
+  const tiltKnownRef = useRef(false)
   /** ライブ：新しいコマだけを計測に入れる（同じ時刻を2回入れない） */
   const liveGateRef = useRef(new FrameGate())
   /** ライブ：requestVideoFrameCallback で受けた、まだ使っていない最新コマの情報 */
@@ -338,9 +355,14 @@ export default function FormCheck({
       const corrected = pose && toAspectCorrected(pose, video.videoWidth / video.videoHeight)
       // 計測の時刻：ライブは performance.now()、動画は再生位置（ミリ秒）
       const t = isFile ? video.currentTime * 1000 : perf
+      // スマホの傾き（動画ファイル・センサー無しは undefined＝「水平：不明」で判定から外す）
+      const deviceTilt = isFile ? undefined : tiltRef.current?.current()
+      const tiltDeg = deviceTilt === undefined ? undefined : imageTilt(deviceTilt, facing)
+      const aspectNow = video.videoWidth / video.videoHeight
 
       if (phaseNow === 'armed') {
-        stepArmed(judgePlacement(formKey, corrected, world), t)
+        placementWinRef.current.push({ t, pose: corrected, world, tiltDeg })
+        stepArmed(placementWinRef.current.judge(formKey, { aspect: aspectNow }), t)
         drawSkeleton(canvas, pose, accent, {}, facing === 'user')
         return
       }
@@ -349,9 +371,16 @@ export default function FormCheck({
       // ライブは新しいコマのときだけ計算に入れる（画面更新がカメラより速くても同じ姿勢を何度も入れない）
       // （コマの時刻が使える端末では、時間軸をそろえるため、通知を受けたコマだけを使う）
       if (!isFile && !(fresh && (!vfcActive || meta !== undefined) && liveGateRef.current.accept(frameT))) return
-      const frame = tracker.push(corrected, isFile ? t : frameT, world)
+      placementWinRef.current.push({ t, pose: corrected, world, tiltDeg })
+      const judged = placementWinRef.current.judge(formKey, { aspect: aspectNow })
+      if (tiltDeg !== undefined && !tiltKnownRef.current) {
+        tiltKnownRef.current = true
+        setTiltKnown(true)
+      }
+      // 撮影条件が ng のフレームが半分以上のレップは、減点・崩れの判定から外れる（placementOk=false）
+      const frame = tracker.push(corrected, isFile ? t : frameT, world, { placement: judged.level, tiltDeg })
       stepMeasuring(frame.reps, frame.visible, t, isFile)
-      if (!isFile) stepChip(judgePlacement(formKey, corrected, world), t)
+      if (!isFile) stepChip(judged.level, t)
       if (isFile && video.duration > 0) {
         const ratio = Math.min(1, video.currentTime / video.duration)
         setProgress(prev => (Math.abs(prev.ratio - ratio) < 0.01 ? prev : { ratio, remainSec: Math.max(0, video.duration - video.currentTime) }))
@@ -359,16 +388,26 @@ export default function FormCheck({
     }
 
     /** 待機中：置き場所の表示・声・自動開始 */
-    const stepArmed = (raw: Placement, t: number) => {
+    const stepArmed = (result: PlacementResult, t: number) => {
+      const raw = result.level
       const shown = stablePlacement(raw, t)
       if (shown !== placementRef.current.shown) {
         placementRef.current.shown = shown
         setPlacement(shown)
       }
+      // 案内文（ng を先に）。同じ内容のときは再描画しない
+      const key = result.reasons.map(r => r.text).join('|')
+      if (key !== reasonsKeyRef.current) {
+        reasonsKeyRef.current = key
+        setReasons(result.reasons)
+      }
       if (shown !== 'ok') {
-        const text = shown === 'hidden' ? PLACEMENT_VOICE.hidden : shown === 'caution' ? PLACEMENT_VOICE.caution : PLACEMENT_VOICE.ng
+        const text = shown === 'hidden'
+          ? PLACEMENT_VOICE.hidden
+          : (result.reasons[0]?.text ?? (shown === 'caution' ? PLACEMENT_VOICE.caution : PLACEMENT_VOICE.ng))
         voice.placement(text)
       }
+      // ng・映っていないあいだは自動開始しない（stepAutoStart が 1.5 秒の待機を数える）
       const r = stepAutoStart(startStateRef.current, raw, t)
       startStateRef.current = r.state
       if (r.start) {
@@ -449,6 +488,12 @@ export default function FormCheck({
   }
 
   function beginMeasuring(file: boolean) {
+    // ライブ：待機中の直近 1 秒の立位から基準値を取る（動画ファイルは開始前の立位が無いので取らない）
+    setStanding(file ? undefined : standingSnapshot(formKey, placementWinRef.current.samplesNow()))
+    if (file) {
+      placementWinRef.current.clear()
+      stopTilt()
+    }
     resetCounting()
     fileSetStartRef.current = undefined
     endedAtRef.current = undefined
@@ -469,9 +514,37 @@ export default function FormCheck({
     changePhase('result')
   }
 
+  function stopTilt() {
+    tiltRef.current?.stop()
+    tiltRef.current = undefined
+  }
+
+  // 結果の表示・待機に戻ったときと、画面を閉じるときは傾きセンサーを止める
+  useEffect(() => {
+    if (phase === 'result' || phase === 'pick' || phase === 'idle') {
+      tiltRef.current?.stop()
+      tiltRef.current = undefined
+    }
+  }, [phase])
+
+  useEffect(() => () => {
+    tiltRef.current?.stop()
+    tiltRef.current = undefined
+  }, [])
+
   /** 「撮影を始める」：ここで音声を有効にして、置き直しの待機に入る */
   const arm = () => {
     voice.prime()
+    // iOS は傾きセンサーの許可をタップ操作の中で求める必要がある（拒否・非対応は「水平：不明」として判定から外す）
+    stopTilt()
+    tiltKnownRef.current = false
+    setTiltKnown(false)
+    void requestTiltPermission().then(ok => {
+      if (ok && (phaseRef.current === 'armed' || phaseRef.current === 'measuring')) tiltRef.current = startTiltSensor()
+    })
+    placementWinRef.current.clear()
+    reasonsKeyRef.current = ''
+    setReasons([])
     startStateRef.current = {}
     placementRef.current = { shown: 'hidden', cand: 'hidden', since: performance.now() }
     setPlacement('hidden')
@@ -481,6 +554,7 @@ export default function FormCheck({
 
   const backToIdle = () => {
     voice.cancel()
+    stopTilt()
     changePhase('idle')
   }
 
@@ -531,7 +605,8 @@ export default function FormCheck({
 
   const ctx = useMemo<FormContext>(() => ({
     key: formKey, exerciseId: ex.id, weight, recentBestWeight, history, baseline, targetId,
-  }), [formKey, ex.id, weight, recentBestWeight, history, baseline, targetId])
+    tiltUnknown: !tiltKnown, standing,
+  }), [formKey, ex.id, weight, recentBestWeight, history, baseline, targetId, tiltKnown, standing])
 
   const report = useMemo(() => (finished && finished.length > 0 ? analyzeSet(finished, ctx) : null), [finished, ctx])
 
@@ -636,6 +711,11 @@ export default function FormCheck({
             {phase === 'armed' && (
               <>
                 <p className="fc-armed-help">スマホを体の真横に置いてください。映りが良いと、自動で始まります。</p>
+                {reasons.length > 0 && (
+                  <ul className="fc-armed-help fc-armed-list" aria-live="polite">
+                    {reasons.map(r => <li key={r.kind}>{r.text}</li>)}
+                  </ul>
+                )}
                 <button type="button" className="btn btn-primary fc-big-btn" onClick={() => { voice.say('スタート'); voice.startChime(); beginMeasuring(false) }}>
                   今すぐ開始
                 </button>

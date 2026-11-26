@@ -2,9 +2,8 @@
  * 撮影の自動開始・自動終了・声かけの判定（純粋関数。画面・カメラ・音声には依存しない）。
  * 動画ファイルのセット分割も、自動終了と同じ判定（8 秒レップが無い）を使う。
  */
-import type { FormExerciseKey, Pose, RepResult, FormSessionSummary } from './types'
-import { CONFIG, MIN_VISIBILITY, SIDE_INDEX } from './rules'
-import { phiFromWorld, shoulderRatio, viewFromRatio, viewOkFromPhi } from './measure'
+import type { FormExerciseKey, RepResult, FormSessionSummary } from './types'
+import type { PlacementLevel } from './placement'
 import { SAFETY_CODES, adviceFor } from './advice'
 import { shouldCueLive, toReportCode } from './analysis'
 import { cueVoiceText } from './voice'
@@ -18,22 +17,9 @@ export const AUTO_END_HIDDEN_MS = 3000
 /** 速度低下がこれを超えたら、安全に関わる声かけだけにする（%） */
 export const FATIGUE_LOSS_PCT = 30
 
-/** 待機中の置き場所の判定。hidden＝必要な関節が映っていない */
-export type Placement = 'ok' | 'caution' | 'ng' | 'hidden'
-
-/** 縦横比をそろえた姿勢と world（あれば）から、置き場所の良否を決める */
-export function judgePlacement(key: FormExerciseKey, pose: Pose | undefined, world?: Pose): Placement {
-  if (!pose) return 'hidden'
-  const joints = CONFIG[key].joints
-  const sideVisible = (side: 'left' | 'right') =>
-    joints.every(j => (pose[SIDE_INDEX[side][j]]?.visibility ?? 0) >= MIN_VISIBILITY)
-  if (!sideVisible('left') && !sideVisible('right')) return 'hidden'
-  const phi = world ? phiFromWorld(world) : undefined
-  if (phi !== undefined) return viewOkFromPhi(phi, key)
-  const ratio = shoulderRatio(pose)
-  if (ratio === undefined) return 'caution'
-  return viewFromRatio(ratio, key).viewOk
-}
+/** 待機中の置き場所の判定の結果（判定は placement.ts。hidden＝必要な関節が映っていない） */
+export type Placement = PlacementLevel
+export { judgePlacement } from './placement'
 
 export interface AutoStartState {
   /** 「良い」状態が始まった時刻（ミリ秒）。良くないなら undefined */

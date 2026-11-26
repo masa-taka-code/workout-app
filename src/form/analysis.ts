@@ -173,7 +173,7 @@ const round2 = (v: number) => Math.round(v * 100) / 100
 
 /** 信頼度が足りるレップか。metrics が無い古い形式は、v1 の結果をそのまま使う */
 function isUsable(r: RepResult): boolean {
-  return r.metrics === undefined || r.metrics.confidence >= MIN_CONFIDENCE
+  return r.metrics === undefined || (r.metrics.confidence >= MIN_CONFIDENCE && r.metrics.placementOk !== false)
 }
 
 /** 1レップの到達度 D（0〜1）。出せなければ undefined */
@@ -498,7 +498,8 @@ function trendOf(report: Pick<FormReport, 'stretch' | 'faults'>, ctx: FormContex
 export function analyzeSet(reps: RepResult[], ctx: FormContext): FormReport {
   const measured = reps.filter(r => r.metrics)
   const usable = reps.filter(isUsable)
-  const scored = usable.length ? usable : reps
+  // 全レップが低信頼度のときは参考値として全レップの平均。撮影条件が悪かったレップ（placementOk=false）は点を付けない
+  const scored = usable.length ? usable : reps.filter(r => r.metrics?.placementOk !== false)
   const overallScore = scored.length ? Math.round(mean(scored.map(r => r.score))) : 0
   const confidence = measured.length ? round2(mean(measured.map(r => r.metrics!.confidence))) : 0
 
@@ -508,7 +509,10 @@ export function analyzeSet(reps: RepResult[], ctx: FormContext): FormReport {
 
   // 全レップが低信頼度：撮り直しをすすめ、ストレッチ・効き具合・原因は出さない
   if (reps.length > 0 && usable.length === 0) {
-    const reason = viewOk === 'ng'
+    const allBadPlacement = reps.every(r => r.metrics?.placementOk === false)
+    const reason = allBadPlacement
+      ? '撮影条件（全身の枠・距離・向き・スマホの傾き・明るさ）が悪く、信頼できる計測になりませんでした。案内に従って置き直し、撮り直してください。'
+      : viewOk === 'ng'
       ? '撮影角度が真横からずれている、または体が見えにくいため、信頼できる計測になりませんでした。真横から全身が映るように撮り直してください。'
       : '体の一部が隠れたり暗かったりして、信頼できる計測になりませんでした。全身が映る明るい場所で撮り直してください。'
     return {
@@ -594,6 +598,7 @@ export function toSessionSummary(report: FormReport, reps: RepResult[], ctx: For
   return {
     date, exerciseId: ctx.exerciseId, key: ctx.key, weight: ctx.weight, reps: reps.length,
     avgScore: report.overallScore, stretchScore: report.stretch?.score, faultCounts, confidence: report.confidence,
+    ...(ctx.standing ? { standing: ctx.standing } : {}),
   }
 }
 
