@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { AppData, Entry, Exercise, ScreenProps } from '../types'
+import type { PersonalBaseline } from '../form/types'
 import { emphasisTargets, toSessionSummary } from '../form/analysis'
 import { formKeyFor } from '../form/engine'
 import { localToday } from '../logic'
@@ -24,8 +25,8 @@ export interface FormCheckButtonProps {
   onApply: (result: { reps: number; formScore: number; endedAt?: number }) => void
   /** フォームの要約・詳細レポート・狙いの部位・音声やカメラの設定を保存するため */
   setData?: ScreenProps['setData']
-  /** 基準（良いフォームの可動域）を保存する */
-  onSaveBaseline: (key: string, baseline: { romDeg: number; minAngle: number; maxAngle: number }) => void
+  /** 自分の基準（条件の良い複数レップの中央値）を保存する。key は種目の ex.id（保存日 savedAt は呼び出し側が入れてよい） */
+  onSaveBaseline: (key: string, baseline: Omit<PersonalBaseline, 'savedAt'>) => void
 }
 
 /** 直近の同種目の最大重量（完了したセットから。なければ undefined） */
@@ -76,7 +77,8 @@ export default function FormCheckButton({ ex, entry, data, onApply, setData, onS
         <FormCheck
           ex={ex}
           formKey={key}
-          baseline={data.formBaselines?.[key]}
+          // 基準は種目の id を優先し、無ければ古い種目キー（'squat' など）のものを使う
+          baseline={data.formBaselines?.[ex.id] ?? data.formBaselines?.[key]}
           history={(data.formSessions ?? []).filter(h => h.exerciseId === ex.id)}
           weight={weight}
           recentBestWeight={recentBest(data, ex.id)}
@@ -89,7 +91,7 @@ export default function FormCheckButton({ ex, entry, data, onApply, setData, onS
             save(saved)
             onApply(result)
           }}
-          onSaveBaseline={onSaveBaseline}
+          onSaveBaseline={b => onSaveBaseline(ex.id, b)}
           onClose={() => setOpen(false)}
         />
       )}

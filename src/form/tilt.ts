@@ -12,6 +12,12 @@ export const TILT_OK_DEG = 3
 /** 設計値・暫定：傾きが |7°| 以下なら caution、それより大きいと ng */
 export const TILT_CAUTION_DEG = 7
 
+/**
+ * 設計値・暫定：計測中に、計測開始時の傾き（固定値）からこれ以上ずれたら、スマホが動いたとして置き場所を ng にする。
+ * 補正は固定値で行うので、ずれが大きいと補正が合わなくなる。ok の幅（3°）と同じ値にしている。
+ */
+export const TILT_SHIFT_NG_DEG = 3
+
 export type TiltLevel = 'ok' | 'caution' | 'ng'
 
 export function tiltLevel(tiltDeg: number): TiltLevel {
@@ -65,7 +71,11 @@ export function correctTilt(pose: Pose, tiltDeg: number): Pose {
   return rotatePose(pose, -tiltDeg)
 }
 
-/** 補正をかける傾きか（caution の範囲だけ。ok は誤差の範囲、ng はそのレップを計測から外す） */
+/**
+ * 補正をかける傾きか。傾きが分かっていれば常に補正する（不明のときだけかけない）。
+ * 計測を始めた時点の傾き（待機中の中央値）をセットのあいだ固定して渡す。
+ * 閾値で補正のオン・オフを切り替えると、傾きが閾値のあたりで揺れたとき体幹の角度に段差が出るため。
+ */
 export function needsTiltCorrection(tiltDeg: number | undefined): tiltDeg is number {
-  return tiltDeg !== undefined && tiltLevel(tiltDeg) === 'caution'
+  return tiltDeg !== undefined && Number.isFinite(tiltDeg)
 }

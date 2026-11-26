@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { FaultFinding, RepResult } from '../form/types'
+import type { FaultFinding, PersonalBaseline, RepResult } from '../form/types'
 import {
-  badPlacementReps, barWidth, bestRep, conditionWord, confidenceDots, groupFaults, isReferenceRep,
+  BASELINE_TOO_FEW_TEXT, badPlacementReps, barWidth, baselineButtonText, baselineConfirmText, conditionWord, confidenceDots, groupFaults, isReferenceRep,
   levelIndex, onlyLowConfidence, pctText, repsText, roundShare, shareText,
 } from './reportFormat'
 
@@ -53,13 +53,10 @@ describe('reportFormat', () => {
     expect(onlyLowConfidence(fault('a', [1, 2], 'low'))).toBe(true)
     expect(onlyLowConfidence(fault('a', [1, 2], 'mid'))).toBe(false)
   })
-  it('参考レップと基準にするレップ', () => {
+  it('参考レップの判定', () => {
     expect(isReferenceRep(rep(1, 90, 0.5))).toBe(true)
     expect(isReferenceRep(rep(1, 90, 0.6))).toBe(false)
     expect(isReferenceRep(rep(1, 90))).toBe(false)
-    expect(bestRep([rep(1, 95, 0.4), rep(2, 80, 0.9), rep(3, 85, 0.9)])?.index).toBe(3)
-    expect(bestRep([rep(1, 70, 0.4), rep(2, 80, 0.3)])?.index).toBe(2)
-    expect(bestRep([])).toBeUndefined()
   })
   it('割合の表記', () => {
     expect(pctText(0.846)).toBe('85%')
@@ -76,5 +73,20 @@ describe('撮影条件が悪かった回', () => {
     expect(isReferenceRep(bad)).toBe(true)
     expect(isReferenceRep(reps[0])).toBe(false)
     expect(badPlacementReps([rep(1, 80, 0.9)])).toEqual([])
+  })
+})
+
+describe('自分の基準の文言', () => {
+  const base = (belowGeneral: string[]): PersonalBaseline => ({
+    version: 2, key: 'squat', savedAt: '2026-11-26', weight: 60, repCount: 4, stats: {}, conditions: { source: 'live', view: 'side' }, belowGeneral,
+  })
+  it('ボタンと、レップが足りないときの案内', () => {
+    expect(baselineButtonText(4)).toBe('このセットを基準にする（条件の良い 4 レップの中央値）')
+    expect(BASELINE_TOO_FEW_TEXT).toBe('条件の良いレップが3回以上必要です')
+  })
+  it('一般の目安でも崩れていた基準は、「浅い／前傾が大きい」と出ていると伝えて確かめる', () => {
+    expect(baselineConfirmText(base([]))).toContain('上書き')
+    expect(baselineConfirmText(base(['shallow']))).toBe('この基準は一般の目安では浅いと出ています。それでも基準にしますか？')
+    expect(baselineConfirmText(base(['forward-lean', 'shallow']))).toBe('この基準は一般の目安では前傾が大きい／浅いと出ています。それでも基準にしますか？')
   })
 })

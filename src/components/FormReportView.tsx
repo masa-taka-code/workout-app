@@ -1,13 +1,27 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Exercise, Muscle } from '../types'
-import type { EmphasisTarget, FaultFinding, FormReport, RepResult } from '../form/types'
+import type { EmphasisTarget, FaultFinding, FormExerciseKey, FormReport, PersonalBaseline, RepResult, StandingSnapshot } from '../form/types'
+import { baselineAdvice, buildBaseline } from '../form/baseline'
 import BodyMap from './BodyMap'
 import {
-  CAUSE_LABEL, SAFETY_FAULT_CODES, barWidth, bestRep, conditionWord, confidenceDots, groupFaults,
+  BASELINE_TOO_FEW_TEXT, CAUSE_LABEL, SAFETY_FAULT_CODES, barWidth, baselineButtonText, baselineConfirmText, conditionWord, confidenceDots, groupFaults,
   badPlacementReps, isReferenceRep, levelIndex, onlyLowConfidence, pctText, repsText, shareText,
 } from './reportFormat'
 import './FormReportView.css'
+
+/** 自分の基準を作るのに必要な、セットの文脈 */
+export interface BaselineSource {
+  key: FormExerciseKey
+  /** このセットの重量（kg、分からなければ 0） */
+  weight: number
+  /** 開始前の立位（ライブ撮影のとき） */
+  standing?: StandingSnapshot
+  /** 今の基準（あれば。更新をすすめる理由の判定に使う） */
+  current?: PersonalBaseline
+  /** 今日の日付（YYYY-MM-DD） */
+  today: string
+}
 
 export interface FormReportViewProps {
   ex: Exercise
@@ -19,7 +33,9 @@ export interface FormReportViewProps {
   readOnly?: boolean
   onApply?: (repsCount: number, mode: 'next' | 'close') => void
   onRetake?: () => void
-  onSaveBaseline?: (rep: RepResult) => void
+  baselineSource?: BaselineSource
+  /** 条件の良いレップの中央値から作った基準を保存する */
+  onSaveBaseline?: (baseline: PersonalBaseline) => void
 }
 
 const MAX_COUNT = 99
@@ -124,7 +140,7 @@ function Meter({ label, value }: { label: string; value: number }) {
 
 export default function FormReportView({
   ex, reps, report, targets, targetId, onTargetChange, readOnly = false,
-  onApply, onRetake, onSaveBaseline,
+  onApply, onRetake, baselineSource, onSaveBaseline,
 }: FormReportViewProps) {
   const analyzed = reps.length
   const badPlacement = badPlacementReps(reps)
@@ -142,7 +158,13 @@ export default function FormReportView({
     const v = d.share !== undefined && maxShare > 0 ? d.share / maxShare : 0.7
     for (const m of d.muscles) highlights[m] = Math.max(highlights[m] ?? 0, v)
   }
-  const best = bestRep(reps)
+  // 基準は、このセットの条件の良いレップ（信頼度・向き・撮影条件が良いもの）の中央値で作る。採点から外したレップは使わない
+  const built = !readOnly && onSaveBaseline && baselineSource
+    ? buildBaseline(baselineSource.key, reps, { weight: baselineSource.weight, standing: baselineSource.standing, date: baselineSource.today })
+    : undefined
+  const advice = built && baselineSource?.current
+    ? baselineAdvice(baselineSource.current, baselineSource.today, baselineSource.weight)
+    : undefined
   const cue = report.primaryCue ?? 'この調子で'
 
   const level = report.emphasis.level
@@ -154,10 +176,12 @@ export default function FormReportView({
     : undefined
 
   const saveBaseline = () => {
-    if (!best || !onSaveBaseline) return
-    if (window.confirm(`${best.index}回目を基準にします。すでに基準がある場合は上書きされます。よろしいですか？`)) {
-      onSaveBaseline(best)
-    }
+    if (!built || !('baseline' in built) || !onSaveBaseline) return
+    const b = built.baseline
+    if (!window.confirm(baselineConfirmText({ ...b, belowGeneral: [] }))) return
+    // 基準に使ったレップが一般の目安でも崩れていたときは、もう一度確かめる
+    if (b.belowGeneral.length > 0 && !window.confirm(baselineConfirmText(b))) return
+    onSaveBaseline(b)
   }
 
   return (
@@ -221,6 +245,7 @@ export default function FormReportView({
         {badPlacement.length > 0 && (
           <p className="muted small">撮影条件が悪かった回：{repsText(badPlacement)}（減点・崩れの判定から外しています）</p>
         )}
+        {report.baselineNote && <p className="muted small">{report.baselineNote}</p>}
 
         {!readOnly && !pain && (
           <button type="button" className="btn frv-pain-btn" onClick={() => setPain(true)}>
@@ -372,10 +397,19 @@ export default function FormReportView({
         </Section>
       )}
 
-      {!readOnly && onSaveBaseline && best && (
-        <button type="button" className="btn frv-baseline" onClick={saveBaseline}>
-          いちばん良いレップを基準にする（{best.index}回目）
-        </button>
+      {built && (
+        <>
+          <button
+            type="button"
+            className="btn frv-baseline"
+            disabled={!('baseline' in built)}
+            onClick={saveBaseline}
+          >
+            {'baseline' in built ? baselineButtonText(built.baseline.repCount) : 'このセットを基準にする'}
+          </button>
+          {!('baseline' in built) && <p className="muted small">{BASELINE_TOO_FEW_TEXT}</p>}
+          {advice && <p className="muted small">{advice}</p>}
+        </>
       )}
 
       <p className="frv-fine frv-disclaimer">{report.disclaimer}</p>

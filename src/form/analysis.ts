@@ -5,9 +5,10 @@
  */
 import { adviceFor, SAFETY_CODES } from './advice'
 import { inferCauses } from './causes'
+import { BASELINE_INCOMPAT_NOTE, baselineCompat, conditionsOf, marginOf, toEngineBaseline } from './baseline'
 import type {
-  EmphasisShare, EmphasisTarget, FaultFinding, FormContext, FormExerciseKey, FormReport, FormSessionSummary,
-  RepResult, ViewKind, ViewOk,
+  BaselineMetric, Confidence, EmphasisShare, EmphasisTarget, FaultFinding, FormContext, FormExerciseKey, FormReport,
+  FormSessionSummary, PersonalBaseline, RepResult, ViewKind, ViewOk,
 } from './types'
 
 /** 信頼度がこれ未満のレップは、減点・原因判定・効き具合の計算に使わない */
@@ -56,10 +57,11 @@ const SHOULDER_NOTE_DEG = 10
 
 // ---- 崩れの検出しきい値（すべて暫定。研究で確かめられた値ではない） ----
 const TH = {
-  /** 上体の前傾（度）。本人基準の +15° は Baseline に体幹の値が無いため未対応 */
   /** 基準動画が無いときの上体の前傾：60° に姿勢推定の角度誤差（約12°、Leuthold 2025）の余裕を足した値 */
   trunkLeanNoBaseline: 72,
   trunkLeanOverBaseline: 15,
+  /** 自分の基準があるときの上体の前傾の上限の天井（度）。基準が大きくても 80° を超えて許さない */
+  trunkLeanBaselineCap: 80,
   heelLift: 0.03,
   kneeValgus: 10,
   hipRise: 0.05,
@@ -240,27 +242,56 @@ function modeOf<T extends string>(xs: T[], worstFirst: T[]): T {
 
 // ---- 崩れの検出 ----
 
-interface Flag { code: string; magnitude: number }
+/** cap：その崩れの原因の確信度の上限（自分の基準で判定したときだけ。基準のばらつき・誤差が入るため） */
+interface Flag { code: string; magnitude: number; cap?: Confidence }
 
-/** 1レップの崩れ。magnitude はしきい値からの相対的な超過（重大さの比較に使う） */
-function detectFaults(r: RepResult, ctx: FormContext): Flag[] {
+/** 自分の基準で「浅さ・伸びきらない」を判定する崩れ。確信度は mid まで（暫定） */
+const BASELINE_DEPTH_CODES: readonly string[] = ['shallow', 'shallow-hinge', 'partial-bottom', 'partial-top']
+/** v1 の（テンポ・可動域の低下）崩れ。基準の良し悪しを見る belowGeneral には入れない */
+const TEMPO_CODES: readonly string[] = ['fast-down', 'rom-drop', 'short-rom']
+
+/**
+ * 1レップの崩れ。magnitude はしきい値からの相対的な超過（重大さの比較に使う）。
+ * personal は撮影条件が合う自分の基準（無ければ一般のしきい値。ctx.baseline の旧形式の基準は personal が無いときだけ使う）。
+ * 安全に関わる崩れ（SAFETY_CODES）とかかとの浮きは、基準で緩めも厳しくもせず、常に一般のしきい値で判定する。
+ */
+function detectFaults(r: RepResult, ctx: FormContext, personal?: PersonalBaseline): Flag[] {
   const m = r.metrics
   const v1 = new Set(r.issues.map(i => i.code))
   const out: Flag[] = []
-  const add = (code: string, magnitude = 0) => out.push({ code, magnitude: Math.max(0, magnitude) })
-  const baselineD = ctx.baseline && ctx.baseline.romDeg > 0 ? reachOf(r, ctx) : undefined
+  const below = (code: string) => !!personal?.belowGeneral.includes(code)
+  /** 基準を使った判定の確信度の上限：一般のしきい値でも出ていた基準なら low、浅さの判定は mid */
+  const capFor = (code: string): Confidence | undefined => (below(code) ? 'low' : BASELINE_DEPTH_CODES.includes(code) ? 'mid' : undefined)
+  const add = (code: string, magnitude = 0, cap?: Confidence) => out.push({ code, magnitude: Math.max(0, magnitude), cap })
+  const stat = (metric: BaselineMetric) => personal?.stats[metric]
+  /** 基準の中央値 − 余裕（これを下回ったら浅い）。基準が無ければ undefined */
+  const lowerLimit = (metric: BaselineMetric): number | undefined => {
+    const st = stat(metric)
+    return st ? st.med - marginOf(metric, st) : undefined
+  }
+  /** 一般の下限を下回らない（基準が浅いとき、一般の目安より緩くしない） */
+  const withFloor = (code: string, lim: number, floor: number) => (below(code) ? Math.max(floor, lim) : lim)
+  const baselineD = !personal && ctx.baseline && ctx.baseline.romDeg > 0 ? reachOf(r, ctx) : undefined
+  const oldBase = personal ? undefined : ctx.baseline
 
   if (ctx.key === 'squat') {
     const lean = m?.trunkLeanMax
-    // 本人の基準動画があれば「基準 +15°」、無ければ 72° 超（誤差の余裕を含む。どちらも暫定）
-    const leanLimit = ctx.baseline?.trunkLeanMax !== undefined ? ctx.baseline.trunkLeanMax + TH.trunkLeanOverBaseline : TH.trunkLeanNoBaseline
-    if (lean !== undefined) { if (lean > leanLimit) add('forward-lean', (lean - leanLimit) / leanLimit) }
+    // 本人の基準があれば「基準 +15°（上限 80°）」、無ければ 72° 超（誤差の余裕を含む。どちらも暫定）
+    const leanBase = stat('trunkLeanMax')?.med ?? oldBase?.trunkLeanMax
+    const leanLimit = leanBase !== undefined ? Math.min(leanBase + TH.trunkLeanOverBaseline, TH.trunkLeanBaselineCap) : TH.trunkLeanNoBaseline
+    const leanCap = leanBase !== undefined && personal ? capFor('forward-lean') : undefined
+    if (lean !== undefined) { if (lean > leanLimit) add('forward-lean', (lean - leanLimit) / leanLimit, leanCap) }
     else if (v1.has('lean')) add('forward-lean')
 
     if (m?.heelLift !== undefined && m.heelLift > TH.heelLift) add('heel-lift', (m.heelLift - TH.heelLift) / TH.heelLift)
 
     const flex = m?.kneeFlexionBottom
-    if (baselineD !== undefined) { if (baselineD < REACH_OK) add('shallow', REACH_OK - baselineD) }
+    const lim = lowerLimit('kneeFlexionBottom')
+    if (lim !== undefined && flex !== undefined) {
+      const l = withFloor('shallow', lim, SQUAT_SHALLOW_NO_BASELINE_DEG)
+      if (flex < l) add('shallow', (l - flex) / l, capFor('shallow'))
+    }
+    else if (baselineD !== undefined) { if (baselineD < REACH_OK) add('shallow', REACH_OK - baselineD) }
     else if (flex !== undefined) {
       if (flex < SQUAT_SHALLOW_NO_BASELINE_DEG) add('shallow', (SQUAT_SHALLOW_NO_BASELINE_DEG - flex) / SQUAT_SHALLOW_NO_BASELINE_DEG)
     }
@@ -271,7 +302,13 @@ function detectFaults(r: RepResult, ctx: FormContext): Flag[] {
       add('knee-valgus', (m.kneeValgusDeg - TH.kneeValgus) / TH.kneeValgus)
     }
   } else if (ctx.key === 'bench') {
-    if (baselineD !== undefined) { if (baselineD < REACH_OK) add('shallow', REACH_OK - baselineD) }
+    const ma = stat('minAngle')
+    if (ma) {
+      // 浅い＝最下点の肘の角度が、基準より余裕以上に大きい（下ろしきれていない）
+      const lim = ma.med + marginOf('minAngle', ma)
+      if (r.minAngle > lim) add('shallow', (r.minAngle - lim) / lim, capFor('shallow'))
+    }
+    else if (baselineD !== undefined) { if (baselineD < REACH_OK) add('shallow', REACH_OK - baselineD) }
     else if (v1.has('shallow')) add('shallow')
     if (m?.hipRise !== undefined && m.hipRise > TH.hipRise) add('hip-rise', (m.hipRise - TH.hipRise) / TH.hipRise)
     if (m?.barPathDrift !== undefined && m.barPathDrift > TH.barDrift) add('bar-drift', (m.barPathDrift - TH.barDrift) / TH.barDrift)
@@ -279,7 +316,10 @@ function detectFaults(r: RepResult, ctx: FormContext): Flag[] {
     const knee = m?.kneeAngleBottom
     if (knee !== undefined && knee < TH.rdlKneeAngle) add('knee-bend', (TH.rdlKneeAngle - knee) / TH.rdlKneeAngle)
     // 背中の丸まりは測れないので検出しない（report の note で案内）
-    if (baselineD !== undefined && baselineD < REACH_OK) add('shallow-hinge', REACH_OK - baselineD)
+    const hip = m?.hipFlexionBottom
+    const lim = lowerLimit('hipFlexionBottom')
+    if (lim !== undefined && hip !== undefined) { if (hip < lim) add('shallow-hinge', (lim - hip) / lim, capFor('shallow-hinge')) }
+    else if (baselineD !== undefined && baselineD < REACH_OK) add('shallow-hinge', REACH_OK - baselineD)
   } else if (ctx.key === 'ohp') {
     // 反りの増加：レップ開始時の後傾との差。どちらかが無ければ判定しない
     const back = m?.trunkLeanBack
@@ -287,9 +327,15 @@ function detectFaults(r: RepResult, ctx: FormContext): Flag[] {
     if (back !== undefined && start !== undefined && back - start > TH.ohpLeanBackIncrease) {
       add('lean-back', (back - start - TH.ohpLeanBackIncrease) / TH.ohpLeanBackIncrease)
     }
-    if (baselineD !== undefined) { if (baselineD < REACH_OK) add('shallow', REACH_OK - baselineD) }
-    else if (m?.elbowFlexionBottom !== undefined && m.elbowFlexionBottom < TH.ohpElbowFlexion) {
-      add('shallow', (TH.ohpElbowFlexion - m.elbowFlexionBottom) / TH.ohpElbowFlexion)
+    const flex = m?.elbowFlexionBottom
+    const lim = lowerLimit('elbowFlexionBottom')
+    if (lim !== undefined && flex !== undefined) {
+      const l = withFloor('shallow', lim, TH.ohpElbowFlexion)
+      if (flex < l) add('shallow', (l - flex) / l, capFor('shallow'))
+    }
+    else if (baselineD !== undefined) { if (baselineD < REACH_OK) add('shallow', REACH_OK - baselineD) }
+    else if (flex !== undefined && flex < TH.ohpElbowFlexion) {
+      add('shallow', (TH.ohpElbowFlexion - flex) / TH.ohpElbowFlexion)
     }
   } else if (ctx.key === 'lateral') {
     // 左右差（abductionAsymmetry）は崩れに入れず、emphasis の note で参考表示する
@@ -300,23 +346,46 @@ function detectFaults(r: RepResult, ctx: FormContext): Flag[] {
     if (torso !== undefined && torso > TH.pulldownTorsoSwing) add('swing', (torso - TH.pulldownTorsoSwing) / TH.pulldownTorsoSwing)
     const top = m?.elbowExtensionTop
     if (top !== undefined) {
-      const limit = ctx.baseline ? ctx.baseline.maxAngle - TH.pulldownElbowTopMargin : TH.pulldownElbowTop
-      if (top < limit) add('partial-top', (limit - top) / limit)
+      const et = stat('elbowExtensionTop')
+      if (et) {
+        // 基準の伸ばしきりより、max(15°, 2×MAD) 以上届いていない
+        const limit = et.med - Math.max(TH.pulldownElbowTopMargin, 2 * et.mad)
+        if (top < limit) add('partial-top', (limit - top) / limit, capFor('partial-top'))
+      } else {
+        const limit = oldBase ? oldBase.maxAngle - TH.pulldownElbowTopMargin : TH.pulldownElbowTop
+        if (top < limit) add('partial-top', (limit - top) / limit)
+      }
     }
   } else if (ctx.key === 'ohext') {
-    if (baselineD !== undefined) { if (baselineD < REACH_OK) add('shallow', REACH_OK - baselineD) }
-    else if (m?.elbowFlexionBottom !== undefined && m.elbowFlexionBottom < OHEXT_FLEXION_DEG) {
-      add('shallow', (OHEXT_FLEXION_DEG - m.elbowFlexionBottom) / OHEXT_FLEXION_DEG)
+    const flex = m?.elbowFlexionBottom
+    const lim = lowerLimit('elbowFlexionBottom')
+    if (lim !== undefined && flex !== undefined) {
+      const l = withFloor('shallow', lim, OHEXT_FLEXION_DEG)
+      if (flex < l) add('shallow', (l - flex) / l, capFor('shallow'))
+    }
+    else if (baselineD !== undefined) { if (baselineD < REACH_OK) add('shallow', REACH_OK - baselineD) }
+    else if (flex !== undefined && flex < OHEXT_FLEXION_DEG) {
+      add('shallow', (OHEXT_FLEXION_DEG - flex) / OHEXT_FLEXION_DEG)
     }
     const arm = m?.upperArmRange
     if (arm !== undefined && arm > TH.ohextUpperArmSwing) add('elbow-drift', (arm - TH.ohextUpperArmSwing) / TH.ohextUpperArmSwing)
   } else if (ctx.key === 'bss') {
     const flex = m?.kneeFlexionBottom
-    if (baselineD !== undefined) { if (baselineD < REACH_OK) add('shallow', REACH_OK - baselineD) }
+    const lim = lowerLimit('kneeFlexionBottom')
+    if (lim !== undefined && flex !== undefined) {
+      const l = withFloor('shallow', lim, TH.bssKneeFlexion)
+      if (flex < l) add('shallow', (l - flex) / l, capFor('shallow'))
+    }
+    else if (baselineD !== undefined) { if (baselineD < REACH_OK) add('shallow', REACH_OK - baselineD) }
     else if (flex !== undefined && flex < TH.bssKneeFlexion) add('shallow', (TH.bssKneeFlexion - flex) / TH.bssKneeFlexion)
     // 前傾は崩れにしない（note に記す）
   } else {
-    if (v1.has('partial-bottom')) add('partial-bottom')
+    // curl：伸ばしきれていない＝最下点の肘の角度（maxAngle）が、基準より余裕以上に小さい
+    const ma = stat('maxAngle')
+    if (ma) {
+      const lim = ma.med - marginOf('maxAngle', ma)
+      if (r.maxAngle < lim) add('partial-bottom', (lim - r.maxAngle) / lim, capFor('partial-bottom'))
+    } else if (v1.has('partial-bottom')) add('partial-bottom')
     if (v1.has('partial-top')) add('partial-top')
     const torso = m?.torsoRange
     if (torso !== undefined) { if (torso > TH.torsoSwing) add('swing', (torso - TH.torsoSwing) / TH.torsoSwing) }
@@ -331,22 +400,35 @@ function detectFaults(r: RepResult, ctx: FormContext): Flag[] {
   return out
 }
 
-interface Detected { code: string; reps: number[]; severity: number }
+/**
+ * 一般のしきい値だけで見た 1 レップの崩れの code（自分の基準は使わない）。
+ * 基準に使うレップが一般の目安でも崩れていたか（belowGeneral）を調べるのに使う。テンポ・可動域の低下は含めない。
+ */
+export function generalFaultCodes(rep: RepResult, key: FormExerciseKey): string[] {
+  const ctx: FormContext = { key, exerciseId: '', weight: 0, history: [] }
+  return detectFaults(rep, ctx).map(f => f.code).filter(c => !TEMPO_CODES.includes(c))
+}
 
-function detectAll(usable: RepResult[], ctx: FormContext): Detected[] {
-  const by = new Map<string, { reps: number[]; mags: number[] }>()
+interface Detected { code: string; reps: number[]; severity: number; cap?: Confidence }
+
+const CONF_RANK: Record<Confidence, number> = { low: 0, mid: 1, high: 2 }
+
+function detectAll(usable: RepResult[], ctx: FormContext, personal?: PersonalBaseline): Detected[] {
+  const by = new Map<string, { reps: number[]; mags: number[]; cap?: Confidence }>()
   for (const r of usable) {
-    for (const f of detectFaults(r, ctx)) {
+    for (const f of detectFaults(r, ctx, personal)) {
       const e = by.get(f.code) ?? { reps: [], mags: [] }
       e.reps.push(r.index)
       e.mags.push(f.magnitude)
+      // 自分の基準で出たレップが 1 つでもあれば、その確信度の上限（いちばん低いもの）をこの崩れの上限にする
+      if (f.cap && (!e.cap || CONF_RANK[f.cap] < CONF_RANK[e.cap])) e.cap = f.cap
       by.set(f.code, e)
     }
   }
   const n = usable.length
   // 重大さ（暫定）：崩れたレップの割合 ×（1 + しきい値からの平均超過、上限 2）
   return [...by].map(([code, e]) => ({
-    code, reps: e.reps, severity: (e.reps.length / n) * (1 + Math.min(2, mean(e.mags))),
+    code, reps: e.reps, severity: (e.reps.length / n) * (1 + Math.min(2, mean(e.mags))), cap: e.cap,
   })).sort((a, b) => b.severity - a.severity)
 }
 
@@ -495,9 +577,15 @@ function trendOf(report: Pick<FormReport, 'stretch' | 'faults'>, ctx: FormContex
 // ---------------------------------------------------------------------------
 
 /** 1セット分のレップから詳細レポートを作る */
-export function analyzeSet(reps: RepResult[], ctx: FormContext): FormReport {
+export function analyzeSet(reps: RepResult[], rawCtx: FormContext): FormReport {
   const measured = reps.filter(r => r.metrics)
   const usable = reps.filter(isUsable)
+  // 自分の基準は、撮影条件が今のセットと合うときだけ使う。合わなければ一般のしきい値で判定し、注記を出す
+  const compat = rawCtx.personal ? baselineCompat(rawCtx.personal, conditionsOf(usable, rawCtx.standing)) : undefined
+  const personal = rawCtx.personal && compat?.ok ? rawCtx.personal : undefined
+  const baselineNote = rawCtx.personal && !compat?.ok ? BASELINE_INCOMPAT_NOTE : undefined
+  // 到達度（ストレッチ）は基準の可動域の中央値。personal があるときは旧形式の ctx.baseline をそれで置き換える
+  const ctx: FormContext = rawCtx.personal ? { ...rawCtx, baseline: personal ? toEngineBaseline(personal) : undefined } : rawCtx
   // 全レップが低信頼度のときは参考値として全レップの平均。撮影条件が悪かったレップ（placementOk=false）は点を付けない
   const scored = usable.length ? usable : reps.filter(r => r.metrics?.placementOk !== false)
   const overallScore = scored.length ? Math.round(mean(scored.map(r => r.score))) : 0
@@ -521,6 +609,7 @@ export function analyzeSet(reps: RepResult[], ctx: FormContext): FormReport {
       effort: { source: 'none' },
       faults: [],
       disclaimer: DISCLAIMER,
+      ...(baselineNote ? { baselineNote } : {}),
     }
   }
 
@@ -556,16 +645,18 @@ export function analyzeSet(reps: RepResult[], ctx: FormContext): FormReport {
   }
 
   // 崩れと原因
-  const detected = detectAll(usable, ctx)
+  const detected = detectAll(usable, ctx, personal)
   const codes = detected.map(d => d.code)
   const usableInfo = usable.map(r => ({ index: r.index, velocityLossPct: r.metrics?.velocityLossPct }))
   const faults: FaultFinding[] = detected.map(d => {
     const a = adviceFor(ctx.key, d.code)
+    const causes = inferCauses(d.code, d.reps, usableInfo, ctx, codes.filter(c => c !== d.code))
     return {
       code: d.code,
       label: a.label,
       reps: d.reps,
-      causes: inferCauses(d.code, d.reps, usableInfo, ctx, codes.filter(c => c !== d.code)),
+      // 自分の基準で判定した崩れは、確信度に上限をかける（基準のばらつき・誤差が入るため）
+      causes: d.cap ? causes.map(c => (CONF_RANK[c.confidence] > CONF_RANK[d.cap as Confidence] ? { ...c, confidence: d.cap as Confidence } : c)) : causes,
       cue: a.cue,
       drills: [...a.drills],
       selfCheck: a.selfCheck,
@@ -586,6 +677,7 @@ export function analyzeSet(reps: RepResult[], ctx: FormContext): FormReport {
     faults,
     primaryCue,
     disclaimer: DISCLAIMER,
+    ...(baselineNote ? { baselineNote } : {}),
   }
   report.trend = trendOf(report, ctx)
   return report

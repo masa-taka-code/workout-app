@@ -423,7 +423,7 @@ export function measureRep(
   const vis = frames.filter((f) => f.visible && f.angle !== undefined && f.pts && f.pose)
   const missing = frames.length > 0 ? 1 - vis.length / frames.length : 1
   const visTerm = vis.length > 0 ? mean(vis.map((f) => visibilityTerm(f.minVis ?? 0))) : 0
-  const { view, viewOk } = judgeView(vis, key)
+  const { view, viewOk, phi } = judgeView(vis, key)
   const medA = median(set.segA)
   const medB = median(set.segB)
   const stability = segmentStability(vis, medA, medB)
@@ -435,6 +435,7 @@ export function measureRep(
   }
   const placementOk = placementOkOf(frames)
   if (placementOk !== undefined) metrics.placementOk = placementOk
+  if (phi !== undefined) metrics.phiDeg = phi
   const result: MeasureResult = { metrics }
   if (vis.length < 2 || !medA || !medB) return result
 

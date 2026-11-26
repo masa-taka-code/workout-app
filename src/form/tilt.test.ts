@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { jointAngle, tiltFromVertical } from './geometry'
 import { RepTracker } from './engine'
-import { correctTilt, imageTilt, needsTiltCorrection, rotatePose, tiltFromOrientation, tiltLevel } from './tilt'
+import { TILT_SHIFT_NG_DEG, correctTilt, imageTilt, needsTiltCorrection, rotatePose, tiltFromOrientation, tiltLevel } from './tilt'
 import { squatPose } from './testPoses'
 import { LM } from './types'
 
@@ -38,12 +38,16 @@ describe('傾きの境界：|3°| 以下 ok、|7°| 以下 caution、それよ�
     expect(tiltLevel(-7)).toBe('caution')
     expect(tiltLevel(7.1)).toBe('ng')
   })
-  it('補正をかけるのは caution の範囲だけ。不明（undefined）はかけない', () => {
-    expect(needsTiltCorrection(2)).toBe(false)
-    expect(needsTiltCorrection(5)).toBe(true)
+  it('傾きが分かっていれば常に補正する（ok・caution・ng の区別なし）。不明（undefined）・数値でないときだけかけない', () => {
+    expect(needsTiltCorrection(0)).toBe(true)
+    expect(needsTiltCorrection(2)).toBe(true)
     expect(needsTiltCorrection(-5)).toBe(true)
-    expect(needsTiltCorrection(9)).toBe(false)
+    expect(needsTiltCorrection(9)).toBe(true)
     expect(needsTiltCorrection(undefined)).toBe(false)
+    expect(needsTiltCorrection(Number.NaN)).toBe(false)
+  })
+  it('計測中の許容：固定値から 3° ずれたら ng（設計値・暫定）', () => {
+    expect(TILT_SHIFT_NG_DEG).toBe(3)
   })
 })
 
@@ -78,13 +82,27 @@ describe('傾き補正', () => {
     expect(fixed.angles.knee).toBeCloseTo(100, 3)
   })
 
-  it('RepTracker：傾きが ok（≤3°）・ng（>7°）・不明のときは補正しない', () => {
-    const tilted = rotatePose(squatPose(100, 30), 2)
-    const a = new RepTracker('squat').push(tilted, 0, undefined, { tiltDeg: 2 }).angles.torso
-    const b = new RepTracker('squat').push(tilted, 0).angles.torso
-    expect(a).toBeCloseTo(b, 8)
-    const c = new RepTracker('squat').push(rotatePose(squatPose(100, 30), 9), 0, undefined, { tiltDeg: 9 }).angles.torso
-    const d = new RepTracker('squat').push(rotatePose(squatPose(100, 30), 9), 0).angles.torso
-    expect(c).toBeCloseTo(d, 8)
+  it('RepTracker：傾きが分かっていれば、ok（≤3°）・ng（>7°）でも補正する。不明のときは補正しない', () => {
+    for (const t of [2, 9]) {
+      const tilted = rotatePose(squatPose(100, 30), t)
+      const fixed = new RepTracker('squat').push(tilted, 0, undefined, { tiltDeg: t }).angles.torso
+      const plain = new RepTracker('squat').push(tilted, 0).angles.torso
+      expect(fixed).toBeCloseTo(30, 3)
+      expect(Math.abs(plain - 30)).toBeGreaterThan(1.5)
+    }
+  })
+
+  it('RepTracker：固定した傾き（3°）で補正すれば、実際の揺れが 2.8〜3.2° でも体幹の角度に段差が出ない', () => {
+    const tracker = new RepTracker('squat')
+    const torso: number[] = []
+    // 揺れ 2.8, 3.2, 2.9, 3.1, ... を固定値 3° で補正する（補正のオン・オフが 3° で切り替わると 3° ぶんの段差が出る）
+    for (let i = 0; i < 12; i++) {
+      const actual = i % 2 === 0 ? 2.8 + 0.02 * i : 3.2 - 0.02 * i
+      const f = tracker.push(rotatePose(squatPose(100, 30), actual), i * 33, undefined, { tiltDeg: 3 })
+      torso.push(f.angles.torso)
+    }
+    // 補正後の差は実際の揺れ（最大 0.4°）の範囲に収まる
+    expect(Math.max(...torso) - Math.min(...torso)).toBeLessThan(0.5)
+    for (const v of torso) expect(Math.abs(v - 30)).toBeLessThan(0.3)
   })
 })

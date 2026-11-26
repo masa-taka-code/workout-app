@@ -103,14 +103,18 @@ const round = (v: number, digits: number): number => {
 export interface PushOptions {
   /** このフレームの撮影条件の判定（placement.ts。直近 1 秒の中央値）。無ければ判定しない */
   placement?: PlacementLevel
-  /** スマホの傾き（度、画像上の向き。tilt.ts）。caution の範囲なら、座標を −傾き 分回してから計測する。不明なら undefined */
+  /**
+   * 補正に使うスマホの傾き（度、画像上の向き。tilt.ts）。計測を始めた時点の値をセットのあいだ固定して渡す。
+   * 分かっていれば常に、座標を −傾き 分回してから計測する。不明なら undefined（補正しない）。
+   */
   tiltDeg?: number
 }
 
 /** 1セット分のフレームを順に受け取り、レップを数えて採点する */
 export class RepTracker {
   readonly key: FormExerciseKey
-  readonly baseline?: Baseline
+  /** 可動域の基準（short-rom の判定用）。撮影条件が分かった時点で setBaseline で差し替える */
+  baseline?: Baseline
 
   /** 角度ごとの直近フレームの生の値（中央値フィルタ用） */
   private recent: Record<string, number[]> = {}
@@ -134,13 +138,18 @@ export class RepTracker {
     this.baseline = baseline
   }
 
+  /** 基準を差し替える（待機中の立位から撮影条件が分かり、基準と合うか決まったあとに呼ぶ） */
+  setBaseline(baseline?: Baseline): void {
+    this.baseline = baseline
+  }
+
   /**
    * timeMs は単調増加するミリ秒（performance.now() など）。
    * world は worldLandmarks（メートル。あれば撮影角度と速度の換算に使う。無くても動く）。
    */
   push(rawPose: Pose | undefined, timeMs: number, world?: Pose, opts: PushOptions = {}): FrameResult {
     const cfg = CONFIG[this.key]
-    // 傾きが caution のときは、鉛直を基準にする計測（体幹・すねの前傾など）の前に座標を補正する（角度・長さは変わらない）
+    // 傾きが分かっていれば、鉛直を基準にする計測（体幹・すねの前傾など）の前に座標を補正する（角度・長さは変わらない）
     const pose = rawPose && needsTiltCorrection(opts.tiltDeg) ? correctTilt(rawPose, opts.tiltDeg) : rawPose
     const prevSide = this.side
     const pts = pose ? this.pickSide(pose, cfg.joints) : undefined
@@ -467,7 +476,10 @@ export function summarizeSet(reps: RepResult[], key?: FormExerciseKey): SetSumma
   return { reps: total, avgScore, mainIssues, lengthenedOk }
 }
 
-/** 良いフォームのレップから基準を作る */
+/**
+ * 良いフォームの 1 レップから基準を作る。
+ * @deprecated 自分の基準は baseline.ts の buildBaseline（条件の良い複数レップの中央値）で作る。旧形式の読み替えと互換のためだけに残している。
+ */
 export function baselineFrom(rep: RepResult): Baseline {
   const b: Baseline = { romDeg: rep.romDeg, minAngle: rep.minAngle, maxAngle: rep.maxAngle }
   if (rep.metrics?.trunkLeanMax !== undefined) b.trunkLeanMax = rep.metrics.trunkLeanMax

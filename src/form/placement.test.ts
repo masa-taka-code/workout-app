@@ -7,8 +7,8 @@ import type { MeasureFrame } from './measure'
 import {
   ARM_DIST_MIN, FRAME_MARGIN, LEG_DIST_MIN, PLACEMENT_WINDOW_MS, PlacementWindow, judgePlacement, standingSnapshot,
 } from './placement'
-import type { PlacementSample } from './placement'
-import { repPath, squatPose, worldPose } from './testPoses'
+import type { PlacementFixed, PlacementSample } from './placement'
+import { repPath, setVisibility, squatPose, worldPose } from './testPoses'
 import type { FormContext, FormExerciseKey, Pose, RepMetrics, RepResult, StandingSnapshot } from './types'
 import { LM } from './types'
 
@@ -96,15 +96,43 @@ describe('枠の余白（画面の端から 3% 以上内側）', () => {
     expect(kinds(judge('squat', standing({ x: 0.97 * aspect }), {}, aspect))).toContain('frame:ng')
   })
 
-  it('上げきった手首（肩の y − 上腕と前腕の長さ）が上端から 3% 未満なら ng：ohp / pulldown / ohext / lateral', () => {
-    for (const key of ['ohp', 'pulldown', 'ohext', 'lateral'] as FormExerciseKey[]) {
-      const world = { world: worldPose(key === 'lateral' ? 90 : 0) } // lateral は正面撮影
-      expect(judge(key, standing({ shoulderY: 0.34, arm: 0.3 }), world)).toEqual({ level: 'ok', reasons: [] })
-      const ng = judge(key, standing({ shoulderY: 0.32, arm: 0.3 }), world)
+  it('上げきった手首（肩の y − 上腕と前腕の長さ）が上端から 3% 未満なら ng：ohp / pulldown / ohext', () => {
+    for (const key of ['ohp', 'pulldown', 'ohext'] as FormExerciseKey[]) {
+      expect(judge(key, standing({ shoulderY: 0.34, arm: 0.3 }))).toEqual({ level: 'ok', reasons: [] })
+      const ng = judge(key, standing({ shoulderY: 0.32, arm: 0.3 }))
       expect(kinds(ng)).toContain('frame:ng')
     }
     // 手首を上げない種目は、肩が上にあっても枠の対象ではない
     expect(judge('curl', standing({ shoulderY: 0.2, arm: 0.3 })).level).toBe('ok')
+  })
+
+  describe('lateral（サイドレイズ）は両肩の左右に腕を水平に上げた手首を見る（上には上げないので上端は対象外）', () => {
+    // 正面撮影（φ=90°）。普通の構図：画面の中央に立ち、肩が画面高の 0.3、腕の長さ 0.4
+    const world = { world: worldPose(90) }
+    const front = (o: Opts = {}) => standing({ x: 0.5, shoulderY: 0.3, arm: 0.4, ...o })
+    it('腕を下ろした姿勢と 90° 上げた姿勢が、普通の構図で ok になる（腕の長さ 0.4 の中央立ち）', () => {
+      expect(judge('lateral', front(), world)).toEqual({ level: 'ok', reasons: [] })
+      // 90° 上げた姿勢：手首・肘が肩の高さで左右へ。予測と同じ位置なので枠の判定は変わらない
+      const raised = front()
+      for (const [s, e, w, dx] of [[11, 13, 15, -1], [12, 14, 16, 1]] as const) {
+        const sh = raised[s]
+        raised[e] = { ...raised[e], x: sh.x + dx * 0.2, y: sh.y }
+        raised[w] = { ...raised[w], x: sh.x + dx * 0.4, y: sh.y }
+      }
+      expect(judge('lateral', raised, world)).toEqual({ level: 'ok', reasons: [] })
+    })
+    it('腕が画面の左右の端（3%）から出る構図は ng（片側だけ寄っていても、反対側の腕で判定する）', () => {
+      expect(kinds(judge('lateral', front({ x: 0.55 }), world))).toEqual([]) // 0.55 + 0.4 = 0.95 は枠内
+      expect(kinds(judge('lateral', front({ x: 0.58 }), world))).toContain('frame:ng') // 0.99 は枠外
+      expect(kinds(judge('lateral', front({ x: 0.42 }), world))).toContain('frame:ng') // 左側：0.02
+    })
+    it('縦横比があるとき、腕の長さは高さ単位のまま足し引きし、判定のとき x ÷ aspect で戻る', () => {
+      const aspect = 0.75
+      // 正規化座標で肩が中央（0.5）→ 姿勢の x は 0.5 × 0.75 = 0.375。腕 0.4（高さ単位）は正規化で 0.533 → 画面の外
+      expect(kinds(judge('lateral', standing({ x: 0.375, shoulderY: 0.3, arm: 0.4 }), world, aspect))).toContain('frame:ng')
+      // 腕 0.25 → 正規化で 0.333：0.5 ± 0.333 = 0.167〜0.833 で枠内
+      expect(kinds(judge('lateral', standing({ x: 0.375, shoulderY: 0.3, arm: 0.25 }), world, aspect))).not.toContain('frame:ng')
+    })
   })
 })
 
@@ -137,6 +165,74 @@ describe('距離', () => {
     expect(kinds(judge('bench', standing({ arm: 0.14 })))).toEqual(['distance-far:caution'])
     expect(kinds(judge('bench', standing({ arm: 0.09 })))).toEqual(['distance-far:ng'])
     expect(judge('bench', standing({ arm: 0.5 })).level).toBe('ok')
+  })
+})
+
+describe('計測中の判定（待機中に固定した値と比べる）', () => {
+  const measuring = (pose: Pose, fixed: PlacementFixed, extra: Partial<PlacementSample> = {}, key: FormExerciseKey = 'squat') =>
+    judgePlacement(key, [sample(pose, { world: worldPose(0), ...extra })], { fixed })
+
+  describe('距離：しゃがむ深さで変わらず、体節長の比で見る', () => {
+    it('squat の最下点（膝 80°）で鼻が下がって鼻〜足首が縮んでも、距離で ng・caution にならない', () => {
+      // 立位の体節長（太もも＋すね）。squatPose は太もも・すねとも 0.2
+      const stand = squatPose(170, 10)
+      const snap = standingSnapshot('squat', [sample(stand, { world: worldPose(0) })])!
+      const bottom = squatPose(80, 30)
+      bottom[LM.nose] = { x: 0.55, y: 0.62, z: 0, visibility: 1 } // 鼻〜足首が 0.28（待機中の判定なら ng の近さ）
+      expect(kinds(judge('squat', bottom))).toContain('distance-far:ng')
+      const r = measuring(bottom, { segLen: snap.segA + snap.segB })
+      expect(kinds(r)).not.toContain('distance-far:ng')
+      expect(kinds(r)).not.toContain('distance-far:caution')
+      expect(r.level).toBe('ok')
+    })
+    it('体節長が待機中の 0.7〜1.3 倍なら ok、外れたら caution、0.5〜1.5 倍の外は ng', () => {
+      const pose = standing() // 太もも＋すね＝ 0.3×0.7×2 = 0.42
+      const seg = 0.3 * 0.7 * 2
+      const at = (ratio: number) => measuring(pose, { segLen: seg / ratio })
+      expect(at(1).level).toBe('ok')
+      expect(at(0.71).level).toBe('ok')
+      expect(at(1.29).level).toBe('ok')
+      const far = at(0.69)
+      expect(far.level).toBe('caution')
+      expect(far.reasons[0]).toMatchObject({ kind: 'distance-far', severity: 'caution' })
+      const near = at(1.31)
+      expect(near.level).toBe('caution')
+      expect(near.reasons[0]).toMatchObject({ kind: 'distance-near', severity: 'caution' })
+      expect(kinds(at(0.49))).toEqual(['distance-far:ng'])
+      expect(kinds(at(1.51))).toEqual(['distance-near:ng'])
+    })
+    it('腕の種目は上腕＋前腕の比で見る', () => {
+      const pose = standing({ arm: 0.3 })
+      expect(measuring(pose, { segLen: 0.3 }, {}, 'bench').level).toBe('ok')
+      expect(kinds(measuring(pose, { segLen: 0.3 / 0.6 }, {}, 'bench'))).toEqual(['distance-far:caution'])
+    })
+    it('固定値が無い（動画ファイル）ときは、距離を判定しない（鼻〜足首が小さくても ng にしない）', () => {
+      expect(kinds(measuring(standing({ span: 0.29 }), {}))).not.toContain('distance-far:ng')
+    })
+  })
+
+  describe('傾き：計測開始時の値からのずれ（3° 以上で「スマホが動いた」ng）', () => {
+    it('固定値 3° に対して、2.9° ずれまで ok、3° ずれで ng', () => {
+      const fixed = { tiltDeg: 3 }
+      expect(measuring(standing(), fixed, { tiltDeg: 5.9 }).level).toBe('ok')
+      expect(measuring(standing(), fixed, { tiltDeg: 0.1 }).level).toBe('ok')
+      const ng = measuring(standing(), fixed, { tiltDeg: 6 })
+      expect(ng.level).toBe('ng')
+      expect(ng.reasons[0]).toMatchObject({ kind: 'tilt', severity: 'ng', text: 'スマホが動きました' })
+      expect(measuring(standing(), fixed, { tiltDeg: 0 }).level).toBe('ng')
+    })
+    it('揺れ 2.8〜3.2° は固定値 3° からのずれが小さいので、ずっと ok（3° の境目でちらつかない）', () => {
+      for (const t of [2.8, 3.2, 2.9, 3.1, 3.0]) expect(measuring(standing(), { tiltDeg: 3 }, { tiltDeg: t }).level).toBe('ok')
+    })
+    it('待機中の 7° 超の ng は計測中には使わない（固定値と同じ傾きなら、大きな傾きでも ng にしない）', () => {
+      expect(measuring(standing(), { tiltDeg: 9 }, { tiltDeg: 9 }).level).toBe('ok')
+      // 待機中は ng のまま
+      expect(judge('squat', standing(), { tiltDeg: 9 }).level).toBe('ng')
+    })
+    it('固定値が無い、または今の傾きが不明なら、傾きの判定をしない', () => {
+      expect(measuring(standing(), {}, { tiltDeg: 20 }).level).toBe('ok')
+      expect(measuring(standing(), { tiltDeg: 3 }).level).toBe('ok')
+    })
   })
 })
 
@@ -183,19 +279,39 @@ describe('スマホの水平', () => {
   })
 })
 
-describe('見えやすさ（必要な関節の visibility の最小値の平均）', () => {
+describe('見えやすさ（映っているフレームの visibility の最小値の中央値＋映っていない割合）', () => {
   it('0.7 以上で ok、未満は caution', () => {
     expect(judge('squat', standing({ vis: 0.7 })).level).toBe('ok')
     const c = judge('squat', standing({ vis: 0.69 }))
     expect(c.level).toBe('caution')
     expect(c.reasons[0]).toMatchObject({ kind: 'visibility', severity: 'caution', text: '体全体が明るく写るようにしてください' })
   })
-  it('窓の平均が 0.5 未満なら ng（半分以下のフレームが映っていなくても平均が低い）', () => {
+  it('映っているフレームだけの中央値で見る：映っていないフレームがあっても、映っている分が明るければ visibility の caution は出ない（20% 以下）', () => {
     const hid = standing({ vis: 0.1 })
-    const dim = standing({ vis: 0.55 })
+    const good = standing({ vis: 0.9 })
+    const r = judgePlacement('squat', [hid, good, good, good, good, good].map(p => sample(p, { world: worldPose(0) })))
+    expect(r.level).toBe('ok')
+  })
+  it('映っていないフレームが 20% 超で caution、50% 超は hidden', () => {
+    const hid = standing({ vis: 0.1 })
+    const good = standing({ vis: 0.9 })
+    const run = (h: number, g: number) =>
+      judgePlacement('squat', [...Array(h).fill(hid), ...Array(g).fill(good)].map(p => sample(p, { world: worldPose(0) })))
+    expect(run(1, 5).level).toBe('ok') // 16.7%
+    const c = run(2, 8) // ちょうど 20% は caution にしない
+    expect(c.level).toBe('ok')
+    const over = run(3, 9) // 25%
+    expect(over.level).toBe('caution')
+    expect(over.reasons[0]).toMatchObject({ kind: 'visibility', severity: 'caution' })
+    expect(run(5, 5).level).toBe('caution') // ちょうど半分は hidden にしない
+    expect(run(6, 5).level).toBe('hidden')
+  })
+  it('見えやすさが 0.7 未満の中央値と映っていない割合が重なっても、visibility の案内は 1 つ', () => {
+    const hid = standing({ vis: 0.1 })
+    const dim = standing({ vis: 0.6 })
     const r = judgePlacement('squat', [hid, hid, dim, dim, dim].map(p => sample(p, { world: worldPose(0) })))
-    expect(r.level).toBe('ng')
-    expect(kinds(r)).toContain('visibility:ng')
+    expect(r.level).toBe('caution')
+    expect(kinds(r)).toEqual(['visibility:caution'])
   })
 })
 
@@ -240,6 +356,9 @@ describe('立位の記録（自分の基準用の値）', () => {
     expect(s.trunkLeanDeg).toBeCloseTo(0, 3)
     expect(s.phiDeg).toBeCloseTo(10, 3)
     expect(s.tiltDeg).toBe(3)
+    expect(s.side).toBe('left') // 左右が同じ見えやすさなら左
+    const rightSide = standingSnapshot('squat', [sample(setVisibility(standing(), 'left', 0.3), { world: worldPose(10) })])!
+    expect(rightSide.side).toBe('right')
     expect(standingSnapshot('squat', [sample(undefined)])).toBeUndefined()
   })
 

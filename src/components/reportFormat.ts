@@ -1,5 +1,6 @@
 import { HIP_KNEE_LEVELS } from '../form/analysis'
-import type { Confidence, FaultFinding, RepResult } from '../form/types'
+import { adviceFor } from '../form/advice'
+import type { Confidence, FaultFinding, FormExerciseKey, PersonalBaseline, RepResult } from '../form/types'
 
 /** 確信度の点と言葉（色では示さない）。例「●●○ 中」 */
 export function confidenceDots(c: Confidence): { dots: string; word: string } {
@@ -83,12 +84,31 @@ export const CAUSE_LABEL: Record<string, string> = {
   structure: '骨格・体格による個人差',
 }
 
-/** いちばん良いレップ（信頼度 0.6 以上を優先し、点数が高いもの。同点は先のレップ）。無ければ undefined */
-export function bestRep(reps: RepResult[]): RepResult | undefined {
-  if (reps.length === 0) return undefined
-  const usable = reps.filter(r => !isReferenceRep(r))
-  const pool = usable.length > 0 ? usable : reps
-  return pool.reduce((best, r) => (r.score > best.score ? r : best))
+/** 基準ボタンの文言。n は基準に使う条件の良いレップ数 */
+export function baselineButtonText(n: number): string {
+  return `このセットを基準にする（条件の良い ${n} レップの中央値）`
+}
+
+/** 条件の良いレップが足りないとき（基準を作れない）の案内 */
+export const BASELINE_TOO_FEW_TEXT = '条件の良いレップが3回以上必要です'
+
+/** 基準の崩れ code を、確認ダイアログの言い方にする */
+function belowLabel(key: FormExerciseKey, code: string): string {
+  if (code === 'forward-lean') return '前傾が大きい'
+  if (code === 'shallow' || code === 'shallow-hinge' || code === 'partial-bottom' || code === 'partial-top') return '浅い'
+  return adviceFor(key, code).label
+}
+
+/**
+ * 基準にする前の確認の文。belowGeneral（基準に使ったレップの半数以上で、一般の目安では崩れと出た崩れ）があるときは
+ * 「一般の目安では〜と出ています」、なければ上書きの確認。
+ */
+export function baselineConfirmText(b: PersonalBaseline): string {
+  if (b.belowGeneral.length === 0) {
+    return `条件の良い ${b.repCount} レップの中央値を基準にします。すでに基準がある場合は上書きされます。よろしいですか？`
+  }
+  const labels = [...new Set(b.belowGeneral.map(c => belowLabel(b.key, c)))].join('／')
+  return `この基準は一般の目安では${labels}と出ています。それでも基準にしますか？`
 }
 
 /** 0〜1 を「85%」に */

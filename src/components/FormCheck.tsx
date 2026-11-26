@@ -3,9 +3,11 @@ import type { ChangeEvent } from 'react'
 import type { PoseLandmarker } from '@mediapipe/tasks-vision'
 import type { Exercise } from '../types'
 import type {
-  Baseline, FormContext, FormExerciseKey, FormReport, FormSessionSummary, RepResult, StandingSnapshot,
+  FormContext, FormExerciseKey, FormReport, FormSessionSummary, PersonalBaseline, RepResult, StandingSnapshot,
 } from '../form/types'
-import { RepTracker, baselineFrom, setupGuide } from '../form/engine'
+import { RepTracker, setupGuide } from '../form/engine'
+import { baselineCompat, conditionsOf, toEngineBaseline } from '../form/baseline'
+import { localToday } from '../logic'
 import { analyzeSet, emphasisTargets } from '../form/analysis'
 import { FrameGate, frameTimeMs } from '../form/frames'
 import type { VideoFrameMeta } from '../form/frames'
@@ -19,7 +21,7 @@ import {
 } from '../form/capture'
 import type { AutoEndState, AutoStartState, Placement } from '../form/capture'
 import { PlacementWindow, standingSnapshot } from '../form/placement'
-import type { PlacementReason, PlacementResult } from '../form/placement'
+import type { PlacementFixed, PlacementReason, PlacementResult } from '../form/placement'
 import { imageTilt } from '../form/tilt'
 import { requestTiltPermission, startTiltSensor } from '../form/tiltSensor'
 import type { TiltSensor } from '../form/tiltSensor'
@@ -38,7 +40,8 @@ export interface FormCheckSaved {
 export interface FormCheckProps {
   ex: Exercise
   formKey: FormExerciseKey
-  baseline?: Baseline
+  /** 自分の基準（あれば）。撮影条件が合うときだけ判定に使う */
+  baseline?: PersonalBaseline
   /** 過去のフォーム要約（新しい順） */
   history: FormSessionSummary[]
   /** 反映先セットの重量（kg、分からなければ 0） */
@@ -54,7 +57,7 @@ export interface FormCheckProps {
   onFacingChange: (facing: Facing) => void
   /** endedAt はライブ撮影のときだけ（動画ファイルは渡さない） */
   onApply: (result: { reps: number; formScore: number; endedAt?: number }, saved: FormCheckSaved) => void
-  onSaveBaseline: (key: string, baseline: Baseline) => void
+  onSaveBaseline: (baseline: PersonalBaseline) => void
   onClose: () => void
 }
 
@@ -137,7 +140,8 @@ export default function FormCheck({
   const [targetId, setTargetId] = useState<string | undefined>(savedTargetId)
 
   // 基準は開いた時点のものを使う（セット中に差し替えない）
-  const [tracker] = useState(() => new RepTracker(formKey, baseline))
+  // 可動域の基準（short-rom の判定用）は、撮影条件が分かる計測の開始時に beginMeasuring で渡す
+  const [tracker] = useState(() => new RepTracker(formKey))
   const voice = useMemo<FormVoice>(() => createVoice(voiceOn), [voiceOn])
   const guide = useMemo(() => setupGuide(formKey), [formKey])
   const targets = useMemo(() => emphasisTargets(formKey), [formKey])
@@ -158,6 +162,8 @@ export default function FormCheck({
   /** スマホの傾きセンサー（ライブ撮影のみ。許可されない・非対応なら undefined＝水平は「不明」） */
   const tiltRef = useRef<TiltSensor | undefined>(undefined)
   const tiltKnownRef = useRef(false)
+  /** 計測を始めた時点で固定する値（傾き補正と、計測中の距離・傾きの判定の基準）。待機中は空 */
+  const fixedRef = useRef<PlacementFixed>({})
   /** ライブ：新しいコマだけを計測に入れる（同じ時刻を2回入れない） */
   const liveGateRef = useRef(new FrameGate())
   /** ライブ：requestVideoFrameCallback で受けた、まだ使っていない最新コマの情報 */
@@ -372,13 +378,15 @@ export default function FormCheck({
       // （コマの時刻が使える端末では、時間軸をそろえるため、通知を受けたコマだけを使う）
       if (!isFile && !(fresh && (!vfcActive || meta !== undefined) && liveGateRef.current.accept(frameT))) return
       placementWinRef.current.push({ t, pose: corrected, world, tiltDeg })
-      const judged = placementWinRef.current.judge(formKey, { aspect: aspectNow })
+      // 計測中の判定は、計測開始時に固定した値（傾き・体節長）と比べる
+      const judged = placementWinRef.current.judge(formKey, { aspect: aspectNow, fixed: fixedRef.current })
       if (tiltDeg !== undefined && !tiltKnownRef.current) {
         tiltKnownRef.current = true
         setTiltKnown(true)
       }
-      // 撮影条件が ng のフレームが半分以上のレップは、減点・崩れの判定から外れる（placementOk=false）
-      const frame = tracker.push(corrected, isFile ? t : frameT, world, { placement: judged.level, tiltDeg })
+      // 撮影条件が ng のフレームが半分以上のレップは、減点・崩れの判定から外れる（placementOk=false）。
+      // 傾き補正は固定した値で常にかける（揺れで補正の有無が切り替わって体幹の角度に段差が出ないように）
+      const frame = tracker.push(corrected, isFile ? t : frameT, world, { placement: judged.level, tiltDeg: fixedRef.current.tiltDeg })
       stepMeasuring(frame.reps, frame.visible, t, isFile)
       if (!isFile) stepChip(judged.level, t)
       if (isFile && video.duration > 0) {
@@ -489,7 +497,12 @@ export default function FormCheck({
 
   function beginMeasuring(file: boolean) {
     // ライブ：待機中の直近 1 秒の立位から基準値を取る（動画ファイルは開始前の立位が無いので取らない）
-    setStanding(file ? undefined : standingSnapshot(formKey, placementWinRef.current.samplesNow()))
+    const snap = file ? undefined : standingSnapshot(formKey, placementWinRef.current.samplesNow())
+    setStanding(snap)
+    // 傾き（待機中の中央値）と体節長はセットのあいだ固定する。動画ファイルは固定する値が無い（計測中の距離・傾きの判定をしない）
+    fixedRef.current = snap ? { tiltDeg: snap.tiltDeg, segLen: snap.segA + snap.segB } : {}
+    // 自分の基準は、撮影条件が合うときだけ可動域の判定（short-rom）に使う
+    tracker.setBaseline(baseline && baselineCompat(baseline, conditionsOf([], snap)).ok ? toEngineBaseline(baseline) : undefined)
     if (file) {
       placementWinRef.current.clear()
       stopTilt()
@@ -543,6 +556,7 @@ export default function FormCheck({
       if (ok && (phaseRef.current === 'armed' || phaseRef.current === 'measuring')) tiltRef.current = startTiltSensor()
     })
     placementWinRef.current.clear()
+    fixedRef.current = {}
     reasonsKeyRef.current = ''
     setReasons([])
     startStateRef.current = {}
@@ -604,7 +618,7 @@ export default function FormCheck({
   }
 
   const ctx = useMemo<FormContext>(() => ({
-    key: formKey, exerciseId: ex.id, weight, recentBestWeight, history, baseline, targetId,
+    key: formKey, exerciseId: ex.id, weight, recentBestWeight, history, personal: baseline, targetId,
     tiltUnknown: !tiltKnown, standing,
   }), [formKey, ex.id, weight, recentBestWeight, history, baseline, targetId, tiltKnown, standing])
 
@@ -775,7 +789,8 @@ export default function FormCheck({
                       // 反映していない結果を捨てるので確認する
                       if (confirm('この結果を記録に反映せずに撮り直しますか？')) toCamera()
                     }}
-                    onSaveBaseline={rep => onSaveBaseline(formKey, baselineFrom(rep))}
+                    baselineSource={{ key: formKey, weight, standing, current: baseline, today: localToday() }}
+                    onSaveBaseline={onSaveBaseline}
                   />
                 </>
               ) : (

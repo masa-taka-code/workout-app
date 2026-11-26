@@ -3,6 +3,7 @@
  * - 計算部分（src/form/engine.ts）と画面（src/components/FormCheck*.tsx）はこの型だけでつながる。
  * - 姿勢推定は MediaPipe Pose Landmarker（33点、座標は画像に対して 0〜1 の正規化値）。
  */
+import type { Side } from './rules'
 
 /** MediaPipe の1点。x, y は 0〜1（左上が原点）、visibility は 0〜1 */
 export interface Landmark {
@@ -117,6 +118,8 @@ export interface RepMetrics {
    * false のレップは回数には数えるが、減点・崩れの判定・採点の平均から外す。判定していない（古い記録・動画の一部）は undefined
    */
   placementOk?: boolean
+  /** 真横（lateral は正面）からのずれ φ（度。judgeView の値そのまま。world が無ければ undefined）。自分の基準の撮影条件の比較に使う */
+  phiDeg?: number
   /** 上げる動作の平均速度（m/s、推定。腰＝squat、手首＝bench/curl の上下動から） */
   concentricVelocity?: number
   /** そのセットの最初の2レップの最大速度に対する低下率（%） */
@@ -264,6 +267,8 @@ export interface FormReport {
   primaryCue?: string
   /** 過去の記録との比較（例「前回より伸張位の到達が +8 点」） */
   trend?: string
+  /** 自分の基準を使わなかった理由（撮影条件が基準と違うとき。画面の注記欄に出す） */
+  baselineNote?: string
   /** 必ず表示する注意（推定であること、痛みがあれば中止） */
   disclaimer: string
 }
@@ -283,6 +288,8 @@ export interface StandingSnapshot {
   phiDeg?: number
   /** スマホの傾き（度。不明なら undefined） */
   tiltDeg?: number
+  /** 計測に使った側（見えやすい側）。自分の基準の撮影条件の比較に使う */
+  side?: Side
 }
 
 /** セッションをまたいだ原因判定のために保存する、1セット分の要約 */
@@ -312,10 +319,53 @@ export interface FormContext {
   recentBestWeight?: number
   /** 過去のフォーム要約（新しい順） */
   history: FormSessionSummary[]
+  /** 旧形式の基準（可動域の中央値など。analyzeSet は personal があればそれから作り直す） */
   baseline?: Baseline
+  /** 自分の基準（複数レップの中央値）。撮影条件が合うときだけ崖の判定に使う（baseline.ts） */
+  personal?: PersonalBaseline
   targetId?: string
   /** スマホの水平が不明（センサー非対応・拒否・動画ファイル）だったか。体幹の前傾の崩れの確信度を low にする */
   tiltUnknown?: boolean
   /** 開始前の立位から取った基準値（要約に保存する） */
   standing?: StandingSnapshot
+}
+
+// ---------------------------------------------------------------------------
+// 自分の基準（B4）：条件の良い複数レップの中央値。計算は baseline.ts
+// ---------------------------------------------------------------------------
+
+/** 中央値と、ばらつき（1.4826×MAD。3 レップ未満なら 0） */
+export interface BaselineStat {
+  med: number
+  mad: number
+}
+
+export type BaselineMetric =
+  | 'minAngle' | 'maxAngle' | 'romDeg' | 'kneeFlexionBottom' | 'trunkLeanMax'
+  | 'hipFlexionBottom' | 'elbowFlexionBottom' | 'elbowExtensionTop' | 'heelLift'
+
+/** 基準を取ったときの撮影条件（今の撮影と比べて、使えるかを決める） */
+export interface BaselineConditions {
+  source: 'live' | 'file'
+  view: ViewKind
+  phiDeg?: number
+  tiltDeg?: number
+  side?: Side
+  /** 立位の太もも＋すね、または上腕＋前腕（画面高比）。StandingSnapshot から */
+  segLen?: number
+}
+
+export interface PersonalBaseline {
+  version: 2
+  key: FormExerciseKey
+  savedAt: string
+  /** 基準を取ったセットの重量（kg、分からなければ 0） */
+  weight: number
+  repCount: number
+  stats: Partial<Record<BaselineMetric, BaselineStat>>
+  conditions: BaselineConditions
+  /** 基準に使ったレップの半数以上で、一般のしきい値の崩れが出た code */
+  belowGeneral: string[]
+  /** 旧形式（1 レップ）から読み替えたもの */
+  legacy?: true
 }

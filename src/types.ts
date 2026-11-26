@@ -131,8 +131,11 @@ export interface AppData {
   schedule?: Schedule
   /** 体づくりの目的：筋肉を増やす／維持／減量中／通知しない（未設定は 'gain' 扱い） */
   bodyGoal?: 'gain' | 'maintain' | 'cut' | 'off'
-  /** 動画フォーム採点の基準（自分の良いフォームの可動域）。種目キーごと */
-  formBaselines?: Partial<Record<string, { romDeg: number; minAngle: number; maxAngle: number; trunkLeanMax?: number; savedAt: string }>>
+  /**
+   * 動画フォーム採点の自分の基準（条件の良い複数レップの中央値）。キーは種目の ex.id。
+   * 古い種目キー（'squat' など）のデータも残して読める（normalizeData が新形式に読み替える）
+   */
+  formBaselines?: Partial<Record<string, import('./form/types').PersonalBaseline>>
   /** フォーム解析の要約の履歴（新しい順、最大 200 件）。原因判定の手がかりに使う */
   formSessions?: import('./form/types').FormSessionSummary[]
   /** 帰宅後に読むための詳細レポート（新しい順、最大 20 件） */

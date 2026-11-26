@@ -13,7 +13,7 @@ import type { Side } from './rules'
 import { tiltFromVertical } from './geometry'
 import { judgeView, median } from './measure'
 import type { MeasureFrame } from './measure'
-import { tiltLevel } from './tilt'
+import { TILT_SHIFT_NG_DEG, tiltLevel } from './tilt'
 
 /** 判定に使う直近の時間（ミリ秒）。設計値・暫定 */
 export const PLACEMENT_WINDOW_MS = 1000
@@ -28,13 +28,24 @@ export const LEG_DIST_EXTREME = 0.3
 export const ARM_DIST_MIN = 0.15
 /** 上半身の種目：これ未満は極端に小さい（ng）。設計値・暫定 */
 export const ARM_DIST_EXTREME = 0.1
-/** 見えやすさ：必要な関節の visibility の最小値の平均。これ以上で ok、未満は caution。設計値・暫定 */
+/** 見えやすさ：映っているフレームの「必要な関節の visibility の最小値」の中央値。これ以上で ok、未満は caution。設計値・暫定 */
 export const VISIBILITY_OK = 0.7
-/** 見えやすさ：これ未満は ng。設計値・暫定 */
+/** 見えやすさ：これ未満は ng。設計値・暫定（映っているフレームは MIN_VISIBILITY=0.5 以上なので、実際には映っていないフレームの割合が先に効く） */
 export const VISIBILITY_NG = 0.5
+/** 映っていないフレームの割合：これを超えたら caution（50% 超は hidden）。設計値・暫定 */
+export const HIDDEN_RATIO_CAUTION = 0.2
+/**
+ * 計測中の距離：姿勢で変わらない長さ（脚の種目は太もも＋すね、腕の種目は上腕＋前腕）を、待機中の値と比べた比。
+ * この範囲の外なら caution、極端な範囲の外なら ng。設計値・暫定。
+ * 鼻〜足首の高さはしゃがむと縮むので、計測中の距離の判定には使わない。
+ */
+export const SEG_RATIO_MIN = 0.7
+export const SEG_RATIO_MAX = 1.3
+export const SEG_RATIO_EXTREME_MIN = 0.5
+export const SEG_RATIO_EXTREME_MAX = 1.5
 
-/** 上げきった手首の位置を予測して枠を確認する種目（腕を頭上まで上げる） */
-const RAISED_WRIST_KEYS: FormExerciseKey[] = ['ohp', 'pulldown', 'ohext', 'lateral']
+/** 上げきった手首の位置を予測して枠を確認する種目（腕を頭上まで上げる）。lateral は横に上げるので別扱い（両肩の左右） */
+const RAISED_WRIST_KEYS: FormExerciseKey[] = ['ohp', 'pulldown', 'ohext']
 
 /** hidden＝必要な関節が映っていない（reasons は空。画面は既存の「映っていない」表示） */
 export type PlacementLevel = 'ok' | 'caution' | 'ng' | 'hidden'
@@ -64,9 +75,23 @@ export interface PlacementSample {
   tiltDeg?: number
 }
 
+/** 計測を始めた時点で固定する値（計測中の判定の基準）。待機中の立位（standingSnapshot）から作る */
+export interface PlacementFixed {
+  /** 計測開始時のスマホの傾き（度）。不明なら undefined（計測中の傾きの判定をしない） */
+  tiltDeg?: number
+  /** 計測開始時の太もも＋すね（脚の種目）または上腕＋前腕（腕の種目）。画面高比。不明なら undefined（計測中の距離の判定をしない） */
+  segLen?: number
+}
+
 export interface PlacementOptions {
   /** 姿勢の x に掛けてある縦横比（幅÷高さ）。枠の判定で正規化座標に戻すのに使う。既定 1 */
   aspect?: number
+  /**
+   * 計測中の判定にする（渡さなければ待機中の判定）。動画ファイルは待機が無いので空のオブジェクトを渡す。
+   * 待機中：距離は鼻〜足首の高さ、傾きは絶対値（7° 超は置き直しの案内）。
+   * 計測中：距離は体節長の比、傾きは固定値からのずれ（3° 以上でスマホが動いた＝ng）。
+   */
+  fixed?: PlacementFixed
 }
 
 const rank = { ok: 0, caution: 1, ng: 2 } as const
@@ -86,8 +111,10 @@ interface FrameMetrics {
   hidden: boolean
   minVis: number
   margin?: number
-  /** 脚の種目：鼻〜足首の高さ。上半身の種目：上腕＋前腕の長さ（どちらも画面高に対する割合） */
+  /** 脚の種目：鼻〜足首の高さ。上半身の種目：上腕＋前腕の長さ（どちらも画面高に対する割合）。待機中の距離の判定に使う */
   distance?: number
+  /** 脚の種目：太もも＋すね、腕の種目：上腕＋前腕（画面高比）。計測中の距離の判定に使う */
+  segLen?: number
 }
 
 function frameMetrics(key: FormExerciseKey, pose: Pose | undefined, aspect: number): FrameMetrics {
@@ -100,6 +127,11 @@ function frameMetrics(key: FormExerciseKey, pose: Pose | undefined, aspect: numb
   const elbow = pose[idx.elbow]
   const wrist = pose[idx.wrist]
   const armLen = shoulder && elbow && wrist ? dist(shoulder, elbow) + dist(elbow, wrist) : undefined
+  const hip = pose[idx.hip]
+  const knee = pose[idx.knee]
+  const ankle0 = pose[idx.ankle]
+  const legLen = hip && knee && ankle0 ? dist(hip, knee) + dist(knee, ankle0) : undefined
+  const segLen = isLegKey(key) ? legLen : armLen
 
   const check = [...pts]
   let distance: number | undefined
@@ -116,6 +148,14 @@ function frameMetrics(key: FormExerciseKey, pose: Pose | undefined, aspect: numb
     if (RAISED_WRIST_KEYS.includes(key) && shoulder && armLen !== undefined) {
       check.push({ x: shoulder.x, y: shoulder.y - armLen, z: 0 })
     }
+    // lateral は両腕を横に上げる：腕を水平に上げたときの手首（肩の高さ、肩から腕の長さだけ左右）が枠に収まるか、左右の肩について見る。
+    // 姿勢の x は縦横比を掛けた座標（高さ単位）なので、腕の長さはそのまま足し引きする（判定のとき x ÷ aspect で正規化座標に戻る）
+    if (key === 'lateral' && armLen !== undefined) {
+      for (const s of [pose[LM.leftShoulder], pose[LM.rightShoulder]]) {
+        if (!s) continue
+        check.push({ x: s.x - armLen, y: s.y, z: 0 }, { x: s.x + armLen, y: s.y, z: 0 })
+      }
+    }
   }
   let margin = Infinity
   for (const p of check) {
@@ -123,7 +163,7 @@ function frameMetrics(key: FormExerciseKey, pose: Pose | undefined, aspect: numb
     const x = p.x / aspect
     margin = Math.min(margin, x, 1 - x, p.y, 1 - p.y)
   }
-  return { hidden: false, minVis, margin: Number.isFinite(margin) ? margin : undefined, distance }
+  return { hidden: false, minVis, margin: Number.isFinite(margin) ? margin : undefined, distance, segLen }
 }
 
 /** 向きの案内（種目によって、真横または正面） */
@@ -138,9 +178,15 @@ function viewText(key: FormExerciseKey, severity: 'caution' | 'ng'): string {
  * 直近の窓（samples）の中央値で置き場所を判定する。
  * 向きは今までと同じ φ の判定（ok ≤15°・caution ≤30°・ng）、傾きは tilt.ts の判定。
  * 傾きが不明（undefined）のときは傾きの判定を外す（ng にしない）。
+ *
+ * 待機中（opts.fixed なし）と計測中（opts.fixed あり）で、距離と傾きの見方が違う：
+ * - 距離：待機中は鼻〜足首の高さ（立っているので全身の大きさが分かる）。計測中はしゃがむと縮むので、
+ *   姿勢で変わらない体節長を待機中の値と比べる。
+ * - 傾き：待機中は絶対値（7° 超は置き直し）。計測中は固定値からのずれ（補正が合わなくなるので 3° 以上で ng）。
  */
 export function judgePlacement(key: FormExerciseKey, samples: PlacementSample[], opts: PlacementOptions = {}): PlacementResult {
   const aspect = opts.aspect && opts.aspect > 0 ? opts.aspect : 1
+  const fixed = opts.fixed
   const frames = samples.map(s => frameMetrics(key, s.pose, aspect))
   const hiddenCount = frames.filter(f => f.hidden).length
   if (samples.length === 0 || hiddenCount * 2 > frames.length) return { level: 'hidden', reasons: [] }
@@ -148,20 +194,31 @@ export function judgePlacement(key: FormExerciseKey, samples: PlacementSample[],
   const reasons: PlacementReason[] = []
   const add = (kind: PlacementKind, severity: 'caution' | 'ng', text: string) => reasons.push({ kind, severity, text })
   const med = (xs: Array<number | undefined>) => median(xs.filter((v): v is number => v !== undefined))
+  const shown = frames.filter(f => !f.hidden)
 
   // 枠の余白
-  const margin = med(frames.filter(f => !f.hidden).map(f => f.margin))
+  const margin = med(shown.map(f => f.margin))
   if (margin !== undefined && margin < FRAME_MARGIN) add('frame', 'ng', '少し離れるか、カメラの向きを調整してください')
 
   // 距離
-  const distance = med(frames.filter(f => !f.hidden).map(f => f.distance))
-  if (distance !== undefined) {
-    if (isLegKey(key)) {
-      if (distance < LEG_DIST_EXTREME) add('distance-far', 'ng', 'もう少し近づいてください')
-      else if (distance < LEG_DIST_MIN) add('distance-far', 'caution', 'もう少し近づいてください')
-      else if (distance > LEG_DIST_MAX) add('distance-near', 'caution', 'もう少し離れてください')
-    } else if (distance < ARM_DIST_EXTREME) add('distance-far', 'ng', 'もう少し近づいてください')
-    else if (distance < ARM_DIST_MIN) add('distance-far', 'caution', 'もう少し近づいてください')
+  if (!fixed) {
+    const distance = med(shown.map(f => f.distance))
+    if (distance !== undefined) {
+      if (isLegKey(key)) {
+        if (distance < LEG_DIST_EXTREME) add('distance-far', 'ng', 'もう少し近づいてください')
+        else if (distance < LEG_DIST_MIN) add('distance-far', 'caution', 'もう少し近づいてください')
+        else if (distance > LEG_DIST_MAX) add('distance-near', 'caution', 'もう少し離れてください')
+      } else if (distance < ARM_DIST_EXTREME) add('distance-far', 'ng', 'もう少し近づいてください')
+      else if (distance < ARM_DIST_MIN) add('distance-far', 'caution', 'もう少し近づいてください')
+    }
+  } else if (fixed.segLen !== undefined && fixed.segLen > 0) {
+    const seg = med(shown.map(f => f.segLen))
+    if (seg !== undefined) {
+      const ratio = seg / fixed.segLen
+      const kind = ratio < 1 ? 'distance-far' : 'distance-near'
+      if (ratio < SEG_RATIO_EXTREME_MIN || ratio > SEG_RATIO_EXTREME_MAX) add(kind, 'ng', 'スマホとの距離が大きく変わりました')
+      else if (ratio < SEG_RATIO_MIN || ratio > SEG_RATIO_MAX) add(kind, 'caution', 'スマホとの距離が変わりました')
+    }
   }
 
   // 向き
@@ -174,14 +231,19 @@ export function judgePlacement(key: FormExerciseKey, samples: PlacementSample[],
   // スマホの水平
   const tilt = med(samples.map(s => s.tiltDeg))
   if (tilt !== undefined) {
-    const lv = tiltLevel(tilt)
-    if (lv !== 'ok') add('tilt', lv, `スマホをまっすぐ立ててください（傾き ${Math.round(Math.abs(tilt))}°）`)
+    if (!fixed) {
+      const lv = tiltLevel(tilt)
+      if (lv !== 'ok') add('tilt', lv, `スマホをまっすぐ立ててください（傾き ${Math.round(Math.abs(tilt))}°）`)
+    } else if (fixed.tiltDeg !== undefined && Math.abs(tilt - fixed.tiltDeg) >= TILT_SHIFT_NG_DEG) {
+      add('tilt', 'ng', 'スマホが動きました')
+    }
   }
 
-  // 見えやすさ（直近の窓での、必要な関節の visibility の最小値の平均）
-  const vis = frames.reduce((s, f) => s + f.minVis, 0) / frames.length
-  if (vis < VISIBILITY_NG) add('visibility', 'ng', '体全体が明るく写るようにしてください')
-  else if (vis < VISIBILITY_OK) add('visibility', 'caution', '体全体が明るく写るようにしてください')
+  // 見えやすさ：映っているフレームの「必要な関節の visibility の最小値」の中央値。映っていないフレームの割合は別に見る
+  const vis = med(shown.map(f => f.minVis))
+  if (vis !== undefined && vis < VISIBILITY_NG) add('visibility', 'ng', '体全体が明るく写るようにしてください')
+  else if (vis !== undefined && vis < VISIBILITY_OK) add('visibility', 'caution', '体全体が明るく写るようにしてください')
+  else if (hiddenCount / frames.length > HIDDEN_RATIO_CAUTION) add('visibility', 'caution', '体が映らない時間があります。全身が入るようにしてください')
 
   reasons.sort((a, b) => rank[b.severity] - rank[a.severity])
   const level = reasons.length === 0 ? 'ok' : reasons[0].severity
@@ -226,11 +288,13 @@ export function standingSnapshot(key: FormExerciseKey, samples: PlacementSample[
   const trunk: number[] = []
   const phi: number[] = []
   const tilt: number[] = []
+  const sides: Record<Side, number> = { left: 0, right: 0 }
   for (const s of samples) {
     if (s.tiltDeg !== undefined) tilt.push(s.tiltDeg)
     if (!s.pose) continue
     const { side, minVis } = bestSide(key, s.pose)
     if (minVis < MIN_VISIBILITY) continue
+    sides[side]++
     const idx = SIDE_INDEX[side]
     const [p, q, r] = isLegKey(key) ? [idx.hip, idx.knee, idx.ankle] : [idx.shoulder, idx.elbow, idx.wrist]
     if (s.pose[p] && s.pose[q] && s.pose[r]) {
@@ -244,5 +308,7 @@ export function standingSnapshot(key: FormExerciseKey, samples: PlacementSample[
   const a = median(segA)
   const b = median(segB)
   if (a === undefined || b === undefined) return undefined
-  return { segA: a, segB: b, trunkLeanDeg: median(trunk), phiDeg: median(phi), tiltDeg: median(tilt) }
+  // 計測に使った側は、見えやすかった回数の多い方（同数なら左）
+  const side: Side = sides.right > sides.left ? 'right' : 'left'
+  return { segA: a, segB: b, trunkLeanDeg: median(trunk), phiDeg: median(phi), tiltDeg: median(tilt), side }
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { AppData, Entry, Exercise, Muscle, Session, SetLog } from './types'
 import { MUSCLES } from './types'
 import { WEEKLY_MAX, WEEKLY_MIN } from './logic'
+import type { BaselineMetric, BaselineStat, FormExerciseKey, PersonalBaseline } from './form/types'
 
 const KEY = 'workout-app:data'
 
@@ -96,6 +97,77 @@ function normalizeSession(v: unknown): Session | undefined {
   return { ...v, entries } as unknown as Session
 }
 
+const FORM_KEYS: FormExerciseKey[] = ['squat', 'bench', 'curl', 'rdl', 'ohp', 'lateral', 'pulldown', 'ohext', 'bss']
+const BASELINE_METRICS: BaselineMetric[] = [
+  'minAngle', 'maxAngle', 'romDeg', 'kneeFlexionBottom', 'trunkLeanMax',
+  'hipFlexionBottom', 'elbowFlexionBottom', 'elbowExtensionTop', 'heelLift',
+]
+const isStat = (v: unknown): v is BaselineStat => isObj(v) && isNum(v.med) && isNum(v.mad) && v.mad >= 0
+const VIEW_KINDS = ['side', 'front', 'oblique', 'unknown']
+
+/**
+ * 自分の基準を整える。
+ * - 旧形式（version が 2 でなく、romDeg・minAngle・maxAngle が数値）：1 レップの値を新形式（legacy）に読み替える。
+ *   種目キーが squat・bss なら kneeFlexionBottom を 180 − minAngle で補う。
+ * - 新形式（version 2）：形を検証し、壊れた値は捨てる（壊れた指標だけ落とし、基準そのものが使えなければ undefined）。
+ * mapKey は formBaselines のキー（旧形式では種目キー）。
+ */
+function normalizeBaseline(v: unknown, mapKey: string): PersonalBaseline | undefined {
+  if (!isObj(v)) return undefined
+  const savedAt = typeof v.savedAt === 'string' ? v.savedAt : ''
+  if (v.version !== 2) {
+    if (!isNum(v.romDeg) || !isNum(v.minAngle) || !isNum(v.maxAngle)) return undefined
+    // 旧形式は種目キー（'squat' など）で保存されていた。それ以外のキーの旧形式は種目が分からないので捨てる
+    if (!(FORM_KEYS as string[]).includes(mapKey)) return undefined
+    const key = mapKey as FormExerciseKey
+    const stats: PersonalBaseline['stats'] = {
+      romDeg: { med: v.romDeg, mad: 0 }, minAngle: { med: v.minAngle, mad: 0 }, maxAngle: { med: v.maxAngle, mad: 0 },
+    }
+    if (isNum(v.trunkLeanMax)) stats.trunkLeanMax = { med: v.trunkLeanMax, mad: 0 }
+    if (key === 'squat' || key === 'bss') stats.kneeFlexionBottom = { med: 180 - v.minAngle, mad: 0 }
+    return {
+      version: 2, key, savedAt, weight: 0, repCount: 1, legacy: true, belowGeneral: [],
+      stats, conditions: { source: 'live', view: 'unknown' },
+    }
+  }
+  if (!(FORM_KEYS as string[]).includes(v.key as string) || !isObj(v.stats) || !isObj(v.conditions)) return undefined
+  const stats: PersonalBaseline['stats'] = {}
+  for (const m of BASELINE_METRICS) {
+    const st = v.stats[m]
+    if (isStat(st)) stats[m] = { med: st.med, mad: st.mad }
+  }
+  if (Object.keys(stats).length === 0) return undefined
+  const c = v.conditions
+  const side = c.side === 'left' || c.side === 'right' ? c.side : undefined
+  const out: PersonalBaseline = {
+    version: 2, key: v.key as FormExerciseKey, savedAt, weight: isNum(v.weight) && v.weight >= 0 ? v.weight : 0,
+    repCount: isNum(v.repCount) && v.repCount >= 1 ? Math.floor(v.repCount) : 1,
+    stats,
+    conditions: {
+      source: c.source === 'file' ? 'file' : 'live',
+      view: VIEW_KINDS.includes(c.view as string) ? (c.view as PersonalBaseline['conditions']['view']) : 'unknown',
+      ...(isNum(c.phiDeg) ? { phiDeg: c.phiDeg } : {}),
+      ...(isNum(c.tiltDeg) ? { tiltDeg: c.tiltDeg } : {}),
+      ...(side ? { side } : {}),
+      ...(isNum(c.segLen) && c.segLen > 0 ? { segLen: c.segLen } : {}),
+    },
+    belowGeneral: Array.isArray(v.belowGeneral) ? v.belowGeneral.filter((x): x is string => typeof x === 'string') : [],
+  }
+  if (v.legacy === true) out.legacy = true
+  return out
+}
+
+/** 基準の一覧を整える。読み替えられない値は捨てる */
+function normalizeBaselines(v: unknown): AppData['formBaselines'] {
+  if (!isObj(v)) return undefined
+  const out: NonNullable<AppData['formBaselines']> = {}
+  for (const [k, b] of Object.entries(v)) {
+    const nb = normalizeBaseline(b, k)
+    if (nb) out[k] = nb
+  }
+  return out
+}
+
 /** 読み込んだ JSON を AppData に整える。形式が違えば undefined（読み込みと JSON インポートで共用）。壊れた要素は補正または捨てる */
 export function normalizeData(parsed: unknown): AppData | undefined {
   if (!isAppData(parsed)) return undefined
@@ -115,7 +187,11 @@ export function normalizeData(parsed: unknown): AppData | undefined {
   const weeklyTargets = normalizeWeeklyTargets(parsed.weeklyTargets)
   // 体づくりの目的は4つの値のみ有効。それ以外は未設定（= gain 扱い）に戻す
   const bodyGoal = (['gain', 'maintain', 'cut', 'off'] as const).find(g => g === parsed.bodyGoal)
-  return { ...defaultData(), ...parsed, exercises, sessions, weeklyTargets, bodyGoal }
+  const out: AppData = { ...defaultData(), ...parsed, exercises, sessions, weeklyTargets, bodyGoal }
+  // 自分の基準：旧形式は読み替え、壊れた値は捨てる（無ければキー自体を持たない）
+  if (parsed.formBaselines === undefined) delete out.formBaselines
+  else out.formBaselines = normalizeBaselines(parsed.formBaselines)
+  return out
 }
 
 export function loadData(): AppData {
