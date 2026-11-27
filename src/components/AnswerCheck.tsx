@@ -4,7 +4,7 @@ import type { Exercise } from '../types'
 import type { FormExerciseKey, ViewKind } from '../form/types'
 import { localToday } from '../logic'
 import {
-  FRAME_STEP_SEC, addAnswerKey, angleFromPoints, angleJoints, evaluate, loadAnswerKeys, nearestFrame, summarizeKeys,
+  FRAME_STEP_SEC, addAnswerKey, angleFromPoints, angleJoints, bottomWord, evaluate, loadAnswerKeys, nearestFrame, summarizeKeys,
 } from '../form/answerKey'
 import type { AnswerKeyRecord, AnswerTotals, AppRep, TraceFrame } from '../form/answerKey'
 import './AnswerCheck.css'
@@ -21,6 +21,10 @@ export interface AnswerCheckProps {
   trace: TraceFrame[]
   view: ViewKind
   phiDeg?: number
+  /** この動画の答え合わせを保存済みか（二重に保存しない） */
+  alreadySaved?: boolean
+  /** 保存できたときに呼ぶ */
+  onSaved?: () => void
   onClose: () => void
 }
 
@@ -48,8 +52,12 @@ const DEFAULT_PTS: Pt[] = [{ x: 0.5, y: 0.35 }, { x: 0.5, y: 0.5 }, { x: 0.5, y:
 /** 0.25 倍速で再生する、最下点の前後の秒数（設計値・暫定） */
 const SLOW_RATE = 0.25
 const SLOW_PAD_SEC = 0.6
-/** 角度を置いたコマと同じとみなす時刻の差（秒） */
-const SAME_FRAME_SEC = 0.02
+/** 角度を置いたコマと同じとみなす時刻の差（秒。1 コマ分。24fps でも収まる。設計値・暫定） */
+const SAME_FRAME_SEC = 1 / 24
+/** コマ送りで、次のコマの中に入れるための余裕（秒） */
+const STEP_MARGIN_SEC = 0.002
+/** コマ送りで、コマが変わらなかったときにやり直す最大回数 */
+const STEP_RETRY = 3
 
 const JOINT_LABEL: Record<string, string> = {
   shoulder: '肩', elbow: '肘', wrist: '手首', hip: '股関節', knee: '膝', ankle: '足首',
@@ -89,10 +97,17 @@ function Totals({ t, name }: { t: AnswerTotals; name: string }) {
   )
 }
 
-export default function AnswerCheck({ ex, formKey, videoUrl, aspect, appReps, trace, view, phiDeg, onClose }: AnswerCheckProps) {
+export default function AnswerCheck({ ex, formKey, videoUrl, aspect, appReps, trace, view, phiDeg, alreadySaved, onSaved, onClose }: AnswerCheckProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const stopAtRef = useRef(Infinity)
+  /** 表示中のコマの時刻（state と同じ値。コマ送りの基準） */
+  const tRef = useRef(0)
+  const seekToken = useRef(0)
+  const stepBusy = useRef(false)
+  const frameKnown = useRef(false)
+  /** 1 コマの長さ（秒）。再生中に観測できれば更新する。それまでは 1/30 */
+  const frameDurRef = useRef(FRAME_STEP_SEC)
   const [t, setT] = useState(0)
   const [dur, setDur] = useState(0)
   const [playing, setPlaying] = useState(false)
@@ -106,21 +121,63 @@ export default function AnswerCheck({ ex, formKey, videoUrl, aspect, appReps, tr
   const [saved, setSaved] = useState<{ totals: AnswerTotals; ok: boolean } | undefined>(undefined)
 
   const joints = angleJoints(formKey)
+  const bw = bottomWord(formKey)
   const sel = items.find(i => i.id === selId)
 
-  const seek = useCallback((to: number) => {
+  const commitT = useCallback((x: number) => {
+    tRef.current = x
+    setT(x)
+  }, [])
+
+  /**
+   * to へ移って止め、実際に表示されたコマの時刻（mediaTime。使えなければ currentTime）を返す。
+   * 古い呼び出しの結果は画面に反映しない
+   */
+  const showAt = useCallback((to: number): Promise<number> => {
     const v = videoRef.current
-    if (!v) return
+    if (!v) return Promise.resolve(tRef.current)
     v.pause()
     setPlaying(false)
     const c = Math.max(0, Math.min(Number.isFinite(v.duration) ? v.duration : to, to))
-    v.currentTime = c
-    setT(c)
-    // コマの時刻が使えれば、実際に表示されたコマの時刻で確定する
-    if (typeof v.requestVideoFrameCallback === 'function') {
-      v.requestVideoFrameCallback((_n, meta) => setT(meta.mediaTime))
+    const token = ++seekToken.current
+    commitT(c)
+    return new Promise<number>(resolve => {
+      let done = false
+      let timer = 0
+      const finish = (x: number) => {
+        if (done) return
+        done = true
+        window.clearTimeout(timer)
+        if (token === seekToken.current) commitT(x)
+        resolve(x)
+      }
+      // コマが変わらない（同じコマに止まる）ときのために、時間切れでも返す
+      timer = window.setTimeout(() => finish(v.currentTime), 400)
+      if (typeof v.requestVideoFrameCallback === 'function') {
+        v.requestVideoFrameCallback((_n, meta) => finish(meta.mediaTime))
+      } else {
+        v.addEventListener('seeked', () => finish(v.currentTime), { once: true })
+      }
+      v.currentTime = c
+    })
+  }, [commitT])
+
+  const seek = useCallback((to: number) => { void showAt(to) }, [showAt])
+
+  /** 1 コマ進む・戻る。表示中のコマの時刻から 1 コマ分＋少しへ移り、コマが変わらなければもう 1 コマ分ずつ進める（最大 STEP_RETRY 回） */
+  const stepFrame = async (dir: 1 | -1) => {
+    if (stepBusy.current) return
+    stepBusy.current = true
+    try {
+      const base = tRef.current
+      for (let n = 1; n <= STEP_RETRY; n++) {
+        const shown = await showAt(base + dir * frameDurRef.current * n + STEP_MARGIN_SEC)
+        if (Math.abs(shown - base) > 1e-4) break
+      }
+    } finally {
+      stepBusy.current = false
     }
-  }, [])
+  }
 
   // 0.25 倍速の再生中：表示したコマの時刻を追い、最下点の少し後で止める
   useEffect(() => {
@@ -128,8 +185,19 @@ export default function AnswerCheck({ ex, formKey, videoUrl, aspect, appReps, tr
     if (!playing || !v) return
     let raf = 0
     let vfc = 0
-    const tick = () => {
-      setT(v.currentTime)
+    let lastMT: number | undefined
+    const tick = (_n?: number, meta?: VideoFrameCallbackMetadata) => {
+      // 表示したコマの時刻（mediaTime）を使う。コマの間隔も観測する（最小の差を 1 コマの長さとみなす）
+      const mt = meta?.mediaTime ?? v.currentTime
+      if (meta && lastMT !== undefined) {
+        const d = mt - lastMT
+        if (d > 0.004 && d < 0.2 && (!frameKnown.current || d < frameDurRef.current)) {
+          frameDurRef.current = d
+          frameKnown.current = true
+        }
+      }
+      if (meta) lastMT = mt
+      commitT(mt)
       if (v.currentTime >= stopAtRef.current || v.ended) {
         v.pause()
         setPlaying(false)
@@ -143,7 +211,7 @@ export default function AnswerCheck({ ex, formKey, videoUrl, aspect, appReps, tr
       cancelAnimationFrame(raf)
       if (vfc && typeof v.cancelVideoFrameCallback === 'function') v.cancelVideoFrameCallback(vfc)
     }
-  }, [playing])
+  }, [playing, commitT])
 
   useEffect(() => () => { videoRef.current?.pause() }, [])
 
@@ -180,7 +248,7 @@ export default function AnswerCheck({ ex, formKey, videoUrl, aspect, appReps, tr
     if (selId === id) setSelId(undefined)
   }
 
-  /** 今のコマで角度を置く（初期位置はアプリの推定位置から少しずらす）。このコマを正解の最下点にする */
+  /** 今のコマで角度を置く（初期位置はアプリの推定位置から少しずらす）。このコマを正解の位置にする */
   const startAngle = (it: Item) => {
     const f = nearestFrame(trace, t, 0.2)
     const base = f?.pts && f.pts.length === 3 ? f.pts : DEFAULT_PTS
@@ -221,11 +289,14 @@ export default function AnswerCheck({ ex, formKey, videoUrl, aspect, appReps, tr
       trueReps: result.count.trueReps,
       reps: result.rows,
     }
+    if (alreadySaved || saved) return
     const next = addAnswerKey(rec)
     const list = next ?? [rec, ...loadAnswerKeys()]
     setSaved({ totals: summarizeKeys(list, formKey), ok: !!next })
+    if (next) onSaved?.()
   }
 
+  const isSaved = !!saved || !!alreadySaved
   const showHandles = !!sel && !!sel.pts && sel.ptsT !== undefined && Math.abs(t - sel.ptsT) < SAME_FRAME_SEC
   const selAngle = sel ? angleOf(sel) : undefined
   const selAppAngle = sel?.source === 'app' ? appReps.find((_, i) => i + 1 === sel.id)?.angle : undefined
@@ -241,7 +312,12 @@ export default function AnswerCheck({ ex, formKey, videoUrl, aspect, appReps, tr
           アプリが数えたレップを、コマ送りで確かめます。動画は保存しません。保存するのは、正解の回数と角度の数値だけです。
         </p>
 
-        <div ref={stageRef} className="ak-stage" style={{ aspectRatio: String(aspect) }}>
+        <div
+          ref={stageRef}
+          className="ak-stage"
+          // 枠の縦横比を動画に合わせる（点とドラッグは枠基準、角度は動画の縦横比で計算するため）。高さは 55vh まで
+          style={{ aspectRatio: String(vAspect), width: `min(100%, calc(55vh * ${vAspect}))` }}
+        >
           <video
             ref={videoRef}
             className="ak-video"
@@ -253,8 +329,7 @@ export default function AnswerCheck({ ex, formKey, videoUrl, aspect, appReps, tr
               setDur(e.currentTarget.duration)
               if (e.currentTarget.videoWidth > 0 && e.currentTarget.videoHeight > 0) setVAspect(e.currentTarget.videoWidth / e.currentTarget.videoHeight)
             }}
-            onSeeked={e => { if (typeof e.currentTarget.requestVideoFrameCallback !== 'function') setT(e.currentTarget.currentTime) }}
-            onError={() => setVideoError(true)}
+                        onError={() => setVideoError(true)}
           />
           {showHandles && sel?.pts?.map((p, i) => (
             <div
@@ -300,20 +375,20 @@ export default function AnswerCheck({ ex, formKey, videoUrl, aspect, appReps, tr
               type="button"
               className={`ak-mark ak-mark-${it.decision}${it.id === selId ? ' ak-mark-sel' : ''}${it.source === 'added' ? ' ak-mark-added' : ''}`}
               style={{ left: `${(Math.min(dur, it.trueT ?? it.bottomT) / dur) * 100}%` }}
-              aria-label={`${it.source === 'added' ? '追加' : 'アプリ'}のレップ ${sec(it.trueT ?? it.bottomT)}`}
+              aria-label={`${it.source === 'added' ? '追加' : 'アプリ'}のレップ（${bw}） ${sec(it.trueT ?? it.bottomT)}`}
               onClick={() => select(it)}
             >
               <span className="ak-mark-dot" />
             </button>
           ))}
         </div>
-        <p className="ak-legend ak-muted">帯＝アプリが数えたレップの範囲　●＝最下点（二重の枠＝追加、薄い＝削除）</p>
+        <p className="ak-legend ak-muted">帯＝アプリが数えたレップの範囲　●＝{bw}（二重の枠＝追加、薄い＝削除）</p>
 
         <div className="ak-step">
-          <button type="button" className="btn" onClick={() => seek(t - FRAME_STEP_SEC)}>◀ 前のコマ</button>
-          <button type="button" className="btn" onClick={() => seek(t + FRAME_STEP_SEC)}>次のコマ ▶</button>
+          <button type="button" className="btn" onClick={() => void stepFrame(-1)}>◀ 前のコマ</button>
+          <button type="button" className="btn" onClick={() => void stepFrame(1)}>次のコマ ▶</button>
         </div>
-        <button type="button" className="btn ak-wide" onClick={addHere}>ここにレップを追加（今のコマを最下点にする）</button>
+        <button type="button" className="btn ak-wide" onClick={addHere}>ここにレップを追加（今のコマを「{bw}」にする）</button>
 
         <h3 className="ak-h">レップ（{items.length} 件）</h3>
         {items.length === 0 && <p className="ak-muted">アプリが検出したレップはありません。見逃しは「ここにレップを追加」で入れてください。</p>}
@@ -325,7 +400,7 @@ export default function AnswerCheck({ ex, formKey, videoUrl, aspect, appReps, tr
               <li key={it.id} className={`card ak-item${isSel ? ' ak-item-sel' : ''}`}>
                 <div className="ak-item-head">
                   <button type="button" className="btn ak-item-go" onClick={() => select(it)} aria-pressed={isSel}>
-                    {label}　最下点 {sec(it.trueT ?? it.bottomT)}
+                    {label}　{bw} {sec(it.trueT ?? it.bottomT)}
                   </button>
                 </div>
                 <div className="ak-item-actions">
@@ -342,7 +417,7 @@ export default function AnswerCheck({ ex, formKey, videoUrl, aspect, appReps, tr
                 {isSel && it.decision !== 'removed' && (
                   <div className="ak-sub">
                     <button type="button" className="btn" onClick={() => (playing ? stopPlay() : playSlow(it))}>
-                      {playing ? '止める' : '0.25 倍速で再生（最下点の前後）'}
+                      {playing ? '止める' : `0.25 倍速で再生（${bw}の前後）`}
                     </button>
                     {joints ? (
                       <>
@@ -389,17 +464,17 @@ export default function AnswerCheck({ ex, formKey, videoUrl, aspect, appReps, tr
               </p>
               <p className="ak-line">適合率 {pct(result.count.precision)}　再現率 {pct(result.count.recall)}　F1 {pct(result.count.f1)}</p>
               <AngleLines s={result.angle} />
-              <p className="ak-note">一致＝最下点の時刻の差が 0.5 秒以内。この比較で分かるのは、画面上（2D）での推定誤差です。</p>
-              {!saved && (
-                <button type="button" className="btn btn-primary ak-wide" onClick={save}>この結果を保存して累計を見る</button>
-              )}
+              <p className="ak-note">一致＝「{bw}」の時刻の差が 0.5 秒以内。この比較で分かるのは、画面上（2D）での推定誤差です。</p>
+              <button type="button" className="btn btn-primary ak-wide" onClick={save} disabled={isSaved}>
+                {!isSaved ? 'この結果を保存して累計を見る' : saved && !saved.ok ? '保存できませんでした' : '保存済み'}
+              </button>
             </>
           )}
         </section>
 
         {saved && (
           <>
-            {!saved.ok && <p className="ak-error" role="alert">保存できませんでした（この端末では保存が使えません）。累計には今回の分だけを含めています。</p>}
+            {!saved.ok && <p className="ak-error" role="alert">保存できませんでした。累計には今回の分を含めて表示しています（次回は残りません）</p>}
             <Totals t={saved.totals} name={ex.name} />
           </>
         )}

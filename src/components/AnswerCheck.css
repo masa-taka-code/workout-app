@@ -28,8 +28,8 @@
 .ak-line { margin: 4px 0 0; font-size: var(--fs-sub); overflow-wrap: anywhere; }
 .ak-stage {
   position: relative;
-  width: 100%;
-  max-height: 55vh;
+  /* 幅・縦横比はコンポーネントが動画に合わせて指定する（min(100%, 55vh×縦横比)） */
+  max-width: 100%;
   margin: 0 auto;
   background: #000;
   border-radius: 12px;

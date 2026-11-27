@@ -14,7 +14,7 @@ import type { Joint } from './rules'
 export const MATCH_TOLERANCE_SEC = 0.5
 /** 保存する最大件数（新しい順。設計値・暫定） */
 export const MAX_ANSWER_KEYS = 200
-/** コマ送りの幅（秒。1/30 秒。設計値・暫定） */
+/** コマ送りの幅（秒。コマの間隔が分からないときの 1/30 秒。設計値・暫定） */
 export const FRAME_STEP_SEC = 1 / 30
 export const ANSWER_KEYS_STORAGE_KEY = 'workout-app:answer-keys'
 
@@ -80,6 +80,18 @@ export function mainAngleName(key: FormExerciseKey): string {
   return CONFIG[key].main
 }
 
+/**
+ * 画面で使う「最下点」の言い方（種目ごと）。curl は曲げきった所、lateral は上げきった所が実際の「いちばん」。
+ * 内部の名前（bottomT など）は変えない。
+ */
+const BOTTOM_WORD: Record<FormExerciseKey, string> = {
+  squat: 'いちばん深い所', bss: 'いちばん深い所', rdl: 'いちばん深い所', bench: 'いちばん深い所', ohp: 'いちばん深い所',
+  ohext: 'いちばん深い所', pulldown: 'いちばん深い所', curl: 'いちばん曲げた所', lateral: 'いちばん上げた所',
+}
+export function bottomWord(key: FormExerciseKey): string {
+  return BOTTOM_WORD[key]
+}
+
 /** 3 点から角度（度）。画像の縦横比（幅÷高さ）で x をそろえてから計算する */
 export function angleFromPoints(pts: Pt[], aspect: number): number | undefined {
   if (pts.length !== 3) return undefined
@@ -93,6 +105,8 @@ export function angleFromPoints(pts: Pt[], aspect: number): number | undefined {
 // ---------------------------------------------------------------------------
 
 /**
+ * bottoms[i]（解析器が出した最下点の時刻・秒）があればそれを最下点にする（セット前の動きに吸われない）。
+ * なければ、以下の記録からの推定：
  * セットの完了した順に、レップ ends[i]（確定した時刻、秒）の手前で主関節の角度が最小のコマを最下点とする。
  * 探す範囲は前のレップの確定の時刻から。ends が足りないレップ（flush で確定したもの）は、記録の最後までを探す。
  * 記録が空・角度が無いときは bottomT を出せないので、そのレップは省く（呼び出し側で数が減る）。
@@ -102,12 +116,19 @@ export function deriveAppReps(
   ends: number[],
   trace: TraceFrame[],
   segmentStartT: number,
+  bottoms: (number | undefined)[] = [],
 ): AppRep[] {
   const out: AppRep[] = []
   let from = segmentStartT
   const lastT = trace.length > 0 ? trace[trace.length - 1].t : segmentStartT
   for (let i = 0; i < minAngles.length; i++) {
     const to = ends[i] ?? lastT
+    const known = bottoms[i]
+    if (known !== undefined && Number.isFinite(known)) {
+      out.push({ startT: from, bottomT: known, endT: to, angle: minAngles[i] })
+      from = to
+      continue
+    }
     let best: TraceFrame | undefined
     for (const f of trace) {
       if (f.t < from || f.t > to || f.angle === undefined) continue

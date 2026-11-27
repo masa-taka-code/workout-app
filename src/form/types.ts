@@ -63,6 +63,10 @@ export interface RepResult {
   /** 最大角度（最も伸びた位置） */
   maxAngle: number
   issues: Issue[]
+  /** 最下点の時刻（秒。解析器が内部で出した値。答え合わせの記録用で、採点には使わない） */
+  bottomT?: number
+  /** レップの開始の時刻（秒。同上） */
+  startT?: number
   /** v2 の計測値（計測側が埋める。古いテストの互換のため省略可） */
   metrics?: RepMetrics
 }
@@ -75,6 +79,8 @@ export interface FrameResult {
   phase: Phase
   /** これまでに完了したレップ（この push で増えることがある） */
   reps: RepResult[]
+  /** 角度の計算に使った側（見えているときだけ。答え合わせの 3 点をそろえるため） */
+  side?: Side
   /** 今すぐ画面に出す短い注意（例「もう少し深く」）。なければ undefined */
   cue?: string
 }

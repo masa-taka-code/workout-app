@@ -644,6 +644,8 @@ export class RepTracker {
       minAngle: round(fin.minAngle, 1),
       maxAngle: round(maxAngle, 1),
       issues,
+      bottomT: fin.minT / 1000,
+      startT: rep.startT / 1000,
     }
     result.metrics = meas.metrics
     // 速度低下の基準は最初の2レップ。バー軌道の基準は1レップ目（撮影条件が悪いレップは基準にしない）
@@ -662,7 +664,7 @@ export class RepTracker {
   private result(visible: boolean, angles: Record<string, number>, timeMs: number, liveCue?: string): FrameResult {
     let cue = liveCue
     if (!cue && this.lastCue && timeMs - this.lastCue.t < CUE_MS) cue = this.lastCue.text
-    return { visible, angles, phase: this.phase, reps: [...this.reps], cue }
+    return { visible, angles, phase: this.phase, reps: [...this.reps], cue, ...(visible && this.side ? { side: this.side } : {}) }
   }
 }
 

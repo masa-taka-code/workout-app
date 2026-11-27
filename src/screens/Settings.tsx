@@ -4,6 +4,7 @@ import type { AppData, Muscle, ScreenProps } from '../types'
 import { MUSCLES } from '../types'
 import { WEEKLY_MAX, WEEKLY_MIN, localToday, weeklyTarget } from '../logic'
 import { defaultData } from '../storage'
+import { ANSWER_KEYS_STORAGE_KEY } from '../form/answerKey'
 import { exportFileName, parseBackup, serialize } from '../backup'
 import { playTest } from '../sound'
 import { toIcs } from '../schedule'
@@ -198,9 +199,15 @@ export default function Settings({ data, setData }: ScreenProps) {
   }
 
   const wipe = () => {
-    if (!window.confirm('すべての記録と種目の設定を削除します')) return
+    if (!window.confirm('すべての記録と種目の設定、動画の答え合わせの記録を削除します')) return
     if (!window.confirm('本当に削除しますか？元に戻せません')) return
     setData(() => defaultData())
+    // 答え合わせの記録は別のキーなので、ここで一緒に消す（バックアップには含めない）
+    try {
+      localStorage.removeItem(ANSWER_KEYS_STORAGE_KEY)
+    } catch {
+      // 保存が使えない環境では何もしない
+    }
   }
 
   return (

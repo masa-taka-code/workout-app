@@ -204,6 +204,21 @@ describe('スクワット', () => {
   })
 })
 
+describe('答え合わせ用の記録（最下点の時刻・側）', () => {
+  it('レップに最下点の時刻（秒）と開始の時刻を載せる。最下点は最小角度のコマ付近', () => {
+    const t = new RepTracker('squat')
+    const path = squatPath([70])
+    const { last, all } = run(t, path, (f) => squatPose(f.angle, 20))
+    const r = last.reps[0]
+    const minFrame = path.reduce((m, f) => (f.angle < m.angle ? f : m), path[0])
+    expect(r.bottomT).toBeDefined()
+    expect(Math.abs((r.bottomT as number) - minFrame.t / 1000)).toBeLessThan(0.3)
+    expect(r.startT as number).toBeLessThan(r.bottomT as number)
+    // 見えているコマは、使った側を返す
+    expect(all[all.length - 1].side === 'left' || all[all.length - 1].side === 'right').toBe(true)
+  })
+})
+
 describe('基準（baseline）', () => {
   it('基準より可動域が狭いと short-rom と romPct が付く', () => {
     const base = { romDeg: 100, minAngle: 70, maxAngle: 170 }

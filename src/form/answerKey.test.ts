@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  ANSWER_KEYS_STORAGE_KEY, MAX_ANSWER_KEYS, addAnswerKey, angleDiffs, angleFromPoints, angleJoints, angleStats,
+  ANSWER_KEYS_STORAGE_KEY, MAX_ANSWER_KEYS, addAnswerKey, angleDiffs, angleFromPoints, angleJoints, angleStats, bottomWord,
   countScore, deriveAppReps, evaluate, loadAnswerKeys, matchReps, nearestFrame, normalizeAnswerKeys, summarizeKeys,
 } from './answerKey'
 import type { AnswerKeyRecord, AppRep, TraceFrame } from './answerKey'
@@ -121,6 +121,16 @@ describe('deriveAppReps / nearestFrame / angleFromPoints', () => {
   it('記録が空ならレップを省く', () => {
     expect(deriveAppReps([90], [3], [], 0)).toEqual([])
   })
+  it('解析器が出した最下点の時刻があれば、記録の角度の列より優先する（セット前の拾う動きに吸われない）', () => {
+    // 0.5 秒に深い角度（拾う動き）。本当の最下点は 2 秒（最小角度 90）
+    const withPick: TraceFrame[] = trace.map(f => (Math.abs(f.t - 0.5) < 1e-9 ? { t: f.t, angle: 30 } : f))
+    expect(deriveAppReps([90, 90], [3, 7], withPick, 0)[0].bottomT).toBe(0.5) // 予備（時刻なし）は吸われる
+    const reps = deriveAppReps([90, 90], [3, 7], withPick, 0, [2, 6])
+    expect(reps.map(r => r.bottomT)).toEqual([2, 6])
+    expect(reps[1].startT).toBe(3)
+    // 一部だけ時刻がある場合は、無いレップだけ予備で出す
+    expect(deriveAppReps([90, 90], [3, 7], trace, 0, [undefined, 6.1]).map(r => r.bottomT)).toEqual([2, 6.1])
+  })
   it('近いコマ', () => {
     expect(nearestFrame(trace, 2.04)?.t).toBe(2)
     expect(nearestFrame(trace, 50)).toBeUndefined()
@@ -136,6 +146,14 @@ describe('deriveAppReps / nearestFrame / angleFromPoints', () => {
     expect(angleJoints('squat')).toEqual(['hip', 'knee', 'ankle'])
     expect(angleJoints('curl')).toEqual(['shoulder', 'elbow', 'wrist'])
     expect(angleJoints('lateral')).toBeUndefined()
+  })
+})
+
+describe('bottomWord', () => {
+  it('種目ごとに言い方を変える', () => {
+    expect(bottomWord('squat')).toBe('いちばん深い所')
+    expect(bottomWord('curl')).toBe('いちばん曲げた所')
+    expect(bottomWord('lateral')).toBe('いちばん上げた所')
   })
 })
 

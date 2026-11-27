@@ -191,6 +191,8 @@ export default function FormCheck({
   /** 答え合わせ用：解析が終わった時点の記録（画面に渡す） */
   const [trace, setTrace] = useState<TraceFrame[]>([])
   const [answering, setAnswering] = useState(false)
+  /** 答え合わせを保存済みの動画（object URL）。同じ動画を二重に保存しないための印 */
+  const [answerSaved, setAnswerSaved] = useState<string[]>([])
 
   const changePhase = useCallback((p: Phase) => {
     phaseRef.current = p
@@ -296,7 +298,7 @@ export default function FormCheck({
   const pushFileSet = (reps: RepResult[], endMs: number) => {
     if (reps.length === 0) return
     const startMs = fileSetStartRef.current ?? 0
-    const appReps = deriveAppReps(reps.map(r => r.minAngle), repEndsRef.current, traceRef.current, startMs / 1000)
+    const appReps = deriveAppReps(reps.map(r => r.minAngle), repEndsRef.current, traceRef.current, startMs / 1000, reps.map(r => r.bottomT))
     fileSetsRef.current = [...fileSetsRef.current, { reps, startMs, endMs: Math.max(endMs, startMs), appReps }]
   }
 
@@ -424,8 +426,9 @@ export default function FormCheck({
       const joints = angleJoints(formKey)
       let pts: { x: number; y: number }[] | undefined
       if (joints && pose) {
-        const vis = (side: Side) => joints.reduce((sum, j) => sum + (pose[SIDE_INDEX[side][j]]?.visibility ?? 0), 0)
-        const side: Side = vis('left') >= vis('right') ? 'left' : 'right'
+        const vis = (sd: Side) => joints.reduce((sum, j) => sum + (pose[SIDE_INDEX[sd][j]]?.visibility ?? 0), 0)
+        // アプリが角度に使った側があればそれ（後ろ脚などに出ないように）。なければ見えやすい側
+        const side: Side = frame.side ?? (vis('left') >= vis('right') ? 'left' : 'right')
         const lms = joints.map(j => pose[SIDE_INDEX[side][j]])
         if (lms.every(l => l && (l.visibility ?? 0) >= MIN_VISIBILITY)) pts = lms.map(l => ({ x: l.x, y: l.y }))
       }
@@ -871,6 +874,8 @@ export default function FormCheck({
           trace={trace}
           view={report?.view ?? 'unknown'}
           phiDeg={medianPhi(finished)}
+          alreadySaved={answerSaved.includes(fileUrl)}
+          onSaved={() => setAnswerSaved(list => (list.includes(fileUrl) ? list : [...list, fileUrl]))}
           onClose={() => setAnswering(false)}
         />
       )}
