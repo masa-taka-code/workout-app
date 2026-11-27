@@ -86,6 +86,7 @@ export default function FormCheckButton({ ex, entry, data, onApply, setData, onS
           recentBestWeight={recentBest(data, ex.id)}
           targetId={data.formTargets?.[ex.id]}
           voiceOn={data.formVoice ?? true}
+          lift3d={data.form3d === true}
           initialFacing={data.formCamera ?? 'user'}
           onTargetChange={id => setData?.(prev => ({ ...prev, formTargets: { ...prev.formTargets, [ex.id]: id } }))}
           onFacingChange={f => setData?.(prev => ({ ...prev, formCamera: f }))}

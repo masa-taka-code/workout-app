@@ -140,3 +140,4 @@
 .fc-pick-list { display: flex; flex-direction: column; gap: 8px; }
 .fc-pick-item { min-height: 56px; width: 100%; text-align: left; font-variant-numeric: tabular-nums; }
 .fc-stage-live { max-height: 68vh; }
+.fc-answer-btn { align-self: stretch; min-height: 48px; }

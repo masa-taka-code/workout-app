@@ -3,7 +3,7 @@ import type { ChangeEvent } from 'react'
 import type { PoseLandmarker } from '@mediapipe/tasks-vision'
 import type { Exercise } from '../types'
 import type {
-  FormContext, FormExerciseKey, FormReport, FormSessionSummary, PersonalBaseline, RepResult, StandingSnapshot,
+  FormContext, FormExerciseKey, FormReport, FrameResult, Pose, FormSessionSummary, PersonalBaseline, RepResult, StandingSnapshot,
 } from '../form/types'
 import { RepTracker, setupGuide } from '../form/engine'
 import { baselineCompat, conditionsOf, toEngineBaseline } from '../form/baseline'
@@ -26,6 +26,11 @@ import { imageTilt } from '../form/tilt'
 import { requestTiltPermission, startTiltSensor } from '../form/tiltSensor'
 import type { TiltSensor } from '../form/tiltSensor'
 import FormReportView from './FormReportView'
+import AnswerCheck from './AnswerCheck'
+import { angleJoints, deriveAppReps, mainAngleName } from '../form/answerKey'
+import type { AppRep, TraceFrame } from '../form/answerKey'
+import { MIN_VISIBILITY, SIDE_INDEX } from '../form/rules'
+import type { Side } from '../form/rules'
 import './FormCheck.css'
 
 export type Facing = 'environment' | 'user'
@@ -51,6 +56,8 @@ export interface FormCheckProps {
   targetId?: string
   /** 撮影中の音声（未設定はオン） */
   voiceOn: boolean
+  /** 試験的な3D角度を記録する（設定）。採点には使わない */
+  lift3d?: boolean
   /** 最後に使ったカメラ（未設定は内カメラ） */
   initialFacing: Facing
   onTargetChange: (id: string) => void
@@ -90,6 +97,8 @@ interface FileSet {
   reps: RepResult[]
   startMs: number
   endMs: number
+  /** 答え合わせ用：アプリが検出した最下点の時刻など */
+  appReps: AppRep[]
 }
 
 function cameraSupported(): boolean {
@@ -102,7 +111,7 @@ function cssColor(el: Element, name: string, fallback: string): string {
 }
 
 export default function FormCheck({
-  ex, formKey, baseline, history, weight, recentBestWeight, targetId: savedTargetId, voiceOn, initialFacing,
+  ex, formKey, baseline, history, weight, recentBestWeight, targetId: savedTargetId, voiceOn, initialFacing, lift3d = false,
   onTargetChange, onFacingChange, onApply, onSaveBaseline, onClose,
 }: FormCheckProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -141,7 +150,11 @@ export default function FormCheck({
 
   // 基準は開いた時点のものを使う（セット中に差し替えない）
   // 可動域の基準（short-rom の判定用）は、撮影条件が分かる計測の開始時に beginMeasuring で渡す
-  const [tracker] = useState(() => new RepTracker(formKey))
+  const [tracker] = useState(() => {
+    const t = new RepTracker(formKey)
+    t.setLift3d(lift3d) // 試験的な3D角度の記録（設定でオンのときだけ。採点には使わない）
+    return t
+  })
   const voice = useMemo<FormVoice>(() => createVoice(voiceOn), [voiceOn])
   const guide = useMemo(() => setupGuide(formKey), [formKey])
   const targets = useMemo(() => emphasisTargets(formKey), [formKey])
@@ -171,6 +184,13 @@ export default function FormCheck({
   const fileSetsRef = useRef<FileSet[]>([])
   const fileSetStartRef = useRef<number | undefined>(undefined)
   const endedAtRef = useRef<number | undefined>(undefined)
+  /** 答え合わせ用：動画の解析中の記録（コマごとの主関節の角度と 3 点）。動画ファイルのときだけ残し、保存はしない */
+  const traceRef = useRef<TraceFrame[]>([])
+  /** 答え合わせ用：今のセットでレップが確定した時刻（秒） */
+  const repEndsRef = useRef<number[]>([])
+  /** 答え合わせ用：解析が終わった時点の記録（画面に渡す） */
+  const [trace, setTrace] = useState<TraceFrame[]>([])
+  const [answering, setAnswering] = useState(false)
 
   const changePhase = useCallback((p: Phase) => {
     phaseRef.current = p
@@ -276,7 +296,8 @@ export default function FormCheck({
   const pushFileSet = (reps: RepResult[], endMs: number) => {
     if (reps.length === 0) return
     const startMs = fileSetStartRef.current ?? 0
-    fileSetsRef.current = [...fileSetsRef.current, { reps, startMs, endMs: Math.max(endMs, startMs) }]
+    const appReps = deriveAppReps(reps.map(r => r.minAngle), repEndsRef.current, traceRef.current, startMs / 1000)
+    fileSetsRef.current = [...fileSetsRef.current, { reps, startMs, endMs: Math.max(endMs, startMs), appReps }]
   }
 
   /** 動画の最後まで解析し終えた */
@@ -286,6 +307,7 @@ export default function FormCheck({
     pushFileSet(tracker.flush(), (video?.currentTime ?? 0) * 1000)
     const sets = fileSetsRef.current
     setFileSets(sets)
+    setTrace(traceRef.current)
     if (sets.length === 1) {
       setFinished(sets[0].reps)
       changePhase('result')
@@ -388,12 +410,27 @@ export default function FormCheck({
       // 撮影条件が ng のフレームが半分以上のレップは、減点・崩れの判定から外れる（placementOk=false）。
       // 傾き補正は固定した値で常にかける（揺れで補正の有無が切り替わって体幹の角度に段差が出ないように）
       const frame = tracker.push(corrected, isFile ? t : frameT, world, { placement: judged.level, tiltDeg: fixedRef.current.tiltDeg })
+      if (isFile) recordTrace(frame, pose, t)
       stepMeasuring(frame.reps, frame.visible, t, isFile)
       if (!isFile) stepChip(judged.level, t)
       if (isFile && video.duration > 0) {
         const ratio = Math.min(1, video.currentTime / video.duration)
         setProgress(prev => (Math.abs(prev.ratio - ratio) < 0.01 ? prev : { ratio, remainSec: Math.max(0, video.duration - video.currentTime) }))
       }
+    }
+
+    /** 答え合わせ用に、このコマの主関節の角度と 3 点（見えやすい側）を残す */
+    const recordTrace = (frame: FrameResult, pose: Pose | undefined, t: number) => {
+      const joints = angleJoints(formKey)
+      let pts: { x: number; y: number }[] | undefined
+      if (joints && pose) {
+        const vis = (side: Side) => joints.reduce((sum, j) => sum + (pose[SIDE_INDEX[side][j]]?.visibility ?? 0), 0)
+        const side: Side = vis('left') >= vis('right') ? 'left' : 'right'
+        const lms = joints.map(j => pose[SIDE_INDEX[side][j]])
+        if (lms.every(l => l && (l.visibility ?? 0) >= MIN_VISIBILITY)) pts = lms.map(l => ({ x: l.x, y: l.y }))
+      }
+      traceRef.current.push({ t: t / 1000, angle: frame.visible ? frame.angles[mainAngleName(formKey)] : undefined, pts })
+      if (frame.reps.length > repEndsRef.current.length) repEndsRef.current.push(t / 1000)
     }
 
     /** 待機中：置き場所の表示・声・自動開始 */
@@ -488,6 +525,7 @@ export default function FormCheck({
   /** 数え直しの準備（新しいセットの前） */
   function resetCounting() {
     tracker.reset()
+    repEndsRef.current = []
     liveGateRef.current.reset()
     repsRef.current = []
     cuedRef.current = false
@@ -585,6 +623,10 @@ export default function FormCheck({
     fileModeRef.current = true
     lastFileTimeRef.current = -1
     fileSetsRef.current = []
+    traceRef.current = []
+    repEndsRef.current = []
+    setTrace([])
+    setAnswering(false)
     setFileSets([])
     setFromFile(true)
     setProgress({ ratio: 0, remainSec: 0 })
@@ -597,6 +639,9 @@ export default function FormCheck({
     voice.cancel()
     fileModeRef.current = false
     setFileUrl(null)
+    traceRef.current = []
+    setTrace([])
+    setAnswering(false)
     setMediaReady(false)
     setFinished(null)
     setFileSets([])
@@ -626,6 +671,7 @@ export default function FormCheck({
     tiltUnknown: !tiltKnown, standing,
   }), [formKey, ex.id, weight, recentBestWeight, history, baseline, targetId, tiltKnown, standing])
 
+  const answerReps = useMemo(() => fileSets.find(x => x.reps === finished)?.appReps, [fileSets, finished])
   const report = useMemo(() => (finished && finished.length > 0 ? analyzeSet(finished, ctx) : null), [finished, ctx])
 
   const hasUnapplied = phase === 'pick' || (phase === 'result' && !!finished && finished.length > 0)
@@ -781,6 +827,11 @@ export default function FormCheck({
               report && finished ? (
                 <>
                   {fromFile && <span className="fc-from-file">動画から</span>}
+                  {fromFile && fileUrl && (answerReps?.length ?? 0) > 0 && (
+                    <button type="button" className="btn fc-answer-btn" onClick={() => setAnswering(true)}>
+                      答え合わせ（アプリの検出を確かめる）
+                    </button>
+                  )}
                   <FormReportView
                     ex={ex}
                     reps={finished}
@@ -810,6 +861,27 @@ export default function FormCheck({
           <button type="button" className="btn fc-close-bottom" onClick={onClose}>閉じる</button>
         )}
       </div>
+      {answering && fileUrl && finished && (
+        <AnswerCheck
+          ex={ex}
+          formKey={formKey}
+          videoUrl={fileUrl}
+          aspect={aspect}
+          appReps={answerReps ?? []}
+          trace={trace}
+          view={report?.view ?? 'unknown'}
+          phiDeg={medianPhi(finished)}
+          onClose={() => setAnswering(false)}
+        />
+      )}
     </div>
   )
+}
+
+/** レップの撮影角度 φ の中央値（なければ undefined） */
+function medianPhi(reps: RepResult[]): number | undefined {
+  const v = reps.map(r => r.metrics?.phiDeg).filter((x): x is number => typeof x === 'number' && Number.isFinite(x)).sort((a, b) => a - b)
+  if (v.length === 0) return undefined
+  const m = Math.floor(v.length / 2)
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2
 }
