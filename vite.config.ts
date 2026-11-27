@@ -1,11 +1,30 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import { execSync } from 'node:child_process'
+import pkg from './package.json' with { type: 'json' }
+
+/** 表示用のビルド情報（バージョン・ビルド日・コミット）。取れないときは空にする */
+function buildInfo() {
+  let sha = process.env.GITHUB_SHA?.slice(0, 7) ?? ''
+  if (!sha) {
+    try {
+      sha = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+    } catch {
+      sha = ''
+    }
+  }
+  const date = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' })
+  return { version: pkg.version, date, sha }
+}
 
 // https://vite.dev/config/
 export default defineConfig({
   // GitHub Pages などのサブパスでも動くよう相対パスにする
   base: './',
+  define: {
+    __APP_BUILD__: JSON.stringify(buildInfo()),
+  },
   plugins: [
     react(),
     VitePWA({

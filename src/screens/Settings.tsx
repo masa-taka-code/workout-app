@@ -311,6 +311,10 @@ export default function Settings({ data, setData }: ScreenProps) {
       <div className="card">
         <h2 className="card-title">このアプリについて</h2>
         <p className="set-about">データはこの端末のブラウザにだけ保存されます。ブラウザのデータを消すと記録も消えるため、定期的にバックアップしてください。</p>
+        <p className="muted">
+          バージョン {__APP_BUILD__.version}
+          {__APP_BUILD__.date && `（${__APP_BUILD__.date}${__APP_BUILD__.sha ? `・${__APP_BUILD__.sha}` : ''}）`}
+        </p>
       </div>
     </section>
   )
