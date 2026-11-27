@@ -131,6 +131,8 @@ export interface AppData {
   schedule?: Schedule
   /** 体づくりの目的：筋肉を増やす／維持／減量中／通知しない（未設定は 'gain' 扱い） */
   bodyGoal?: 'gain' | 'maintain' | 'cut' | 'off'
+  /** 試験的な 3D 角度をレップの記録に残すか（未設定はオフ。採点には使わない） */
+  form3d?: boolean
   /**
    * 動画フォーム採点の自分の基準（条件の良い複数レップの中央値）。キーは種目の ex.id。
    * 古い種目キー（'squat' など）のデータも残して読める（normalizeData が新形式に読み替える）

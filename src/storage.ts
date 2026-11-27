@@ -189,6 +189,8 @@ export function normalizeData(parsed: unknown): AppData | undefined {
   // 体づくりの目的は4つの値のみ有効。それ以外は未設定（= gain 扱い）に戻す
   const bodyGoal = (['gain', 'maintain', 'cut', 'off'] as const).find(g => g === parsed.bodyGoal)
   const out: AppData = { ...defaultData(), ...parsed, exercises, sessions, weeklyTargets, bodyGoal }
+  // 試験的な 3D 角度の記録：boolean 以外は未設定に戻す
+  if (typeof parsed.form3d !== 'boolean') delete out.form3d
   // 自分の基準：旧形式は読み替え、壊れた値は捨てる（無ければキー自体を持たない）
   if (parsed.formBaselines === undefined) delete out.formBaselines
   else out.formBaselines = normalizeBaselines(parsed.formBaselines)

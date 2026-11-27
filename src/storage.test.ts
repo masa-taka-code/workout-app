@@ -91,6 +91,14 @@ describe('normalizeData（種目・週目標・セッションid）', () => {
     expect(normalizeData({ ...base(), bodyGoal: 3 })?.bodyGoal).toBeUndefined()
     expect(normalizeData({ ...base() })?.bodyGoal).toBeUndefined()
   })
+
+  it('form3d は boolean のみ残し、それ以外は undefined にする', () => {
+    expect(normalizeData({ ...base(), form3d: true })?.form3d).toBe(true)
+    expect(normalizeData({ ...base(), form3d: false })?.form3d).toBe(false)
+    expect(normalizeData({ ...base(), form3d: 'yes' })?.form3d).toBeUndefined()
+    expect(normalizeData({ ...base(), form3d: 1 })?.form3d).toBeUndefined()
+    expect(normalizeData({ ...base() })?.form3d).toBeUndefined()
+  })
 })
 
 describe('normalizeData（自分の基準 formBaselines）', () => {

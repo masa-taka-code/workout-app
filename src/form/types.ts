@@ -141,6 +141,11 @@ export interface RepMetrics {
   worldTrust?: boolean
   /** 真横（lateral は正面）からのずれ φ（度。judgeView の値そのまま。world が無ければ undefined）。自分の基準の撮影条件の比較に使う */
   phiDeg?: number
+  /**
+   * 試験的な 3D の主関節の角度（度）：最下点のコマで、画面上の位置＋立位の骨の長さからの奥行き＋world の前後の向きから出した内角（lift3d.ts）。
+   * 記録だけで、採点・崩れの判定・基準には使わない。設定「試験的な3D角度を記録する」がオフ・world が不信・立位の長さが無いときは付けない
+   */
+  angle3dBottom?: number
   /** 上げる動作の平均速度（m/s、推定。腰＝squat、手首＝bench/curl の上下動から） */
   concentricVelocity?: number
   /** そのセットの最初の2レップの最大速度に対する低下率（%） */

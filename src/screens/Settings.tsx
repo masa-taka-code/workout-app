@@ -62,6 +62,8 @@ export default function Settings({ data, setData }: ScreenProps) {
   const setSound = (sound: boolean) => setData(prev => ({ ...prev, sound }))
   const formVoiceOn = data.formVoice ?? true
   const setFormVoice = (formVoice: boolean) => setData(prev => ({ ...prev, formVoice }))
+  const form3dOn = data.form3d ?? false
+  const setForm3d = (form3d: boolean) => setData(prev => ({ ...prev, form3d }))
 
   const bodyGoal = data.bodyGoal ?? 'gain'
   const setBodyGoal = (goal: NonNullable<AppData['bodyGoal']>) => setData(prev => ({ ...prev, bodyGoal: goal }))
@@ -248,6 +250,18 @@ export default function Settings({ data, setData }: ScreenProps) {
           </div>
         </div>
         <p className="muted">フォーム撮影中に、開始・終了・フォームの声かけを読み上げます。ジムでは聞こえにくいので、イヤホンの使用をおすすめします。</p>
+      </div>
+
+      <div className="card">
+        <h2 className="card-title">試験的な機能</h2>
+        <div className="set-sound">
+          <span className="set-sound-label">試験的な3D角度を記録する</span>
+          <div className="seg" role="group" aria-label="試験的な3D角度を記録する">
+            <button type="button" className="btn" aria-pressed={form3dOn} onClick={() => setForm3d(true)}>オン</button>
+            <button type="button" className="btn" aria-pressed={!form3dOn} onClick={() => setForm3d(false)}>オフ</button>
+          </div>
+        </div>
+        <p className="muted">斜めから撮ったときの角度のずれを、立った姿勢で測った骨の長さで補正する機能を試しています。記録するだけで、採点には使いません。精度を確かめてから使います。</p>
       </div>
 
       <div className="card">

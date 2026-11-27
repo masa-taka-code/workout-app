@@ -197,6 +197,10 @@ export class RepTracker {
   /** 立位の骨の長さ（画面上。setRefLengths で渡す。無ければ最初の 0.5 秒の中央値） */
   private standingLens?: { a: number; b: number }
   private refCache?: { a: number; b: number }
+  /** 試験的な 3D 角度（lift3d.ts）を記録するか。既定オフ。記録だけで採点には使わない */
+  private lift3dOn = false
+  /** 3D 角度に使う立位の骨の長さ（setRefLengths の値。外れ値の基準の取り直しでは消さない） */
+  private lift3dLens?: { a: number; b: number }
   private refCacheN = 0
   /** 骨の長さの基準を出すための、実測のコマの体節長（画面上）。基準を取り直すときに捨てる（measure に渡す stats とは別） */
   private refSamples: { a: number[]; b: number[] } = { a: [], b: [] }
@@ -214,7 +218,13 @@ export class RepTracker {
    */
   setRefLengths(segA?: number, segB?: number): void {
     this.standingLens = segA && segB ? { a: segA, b: segB } : undefined
+    this.lift3dLens = this.standingLens
     this.refCache = undefined
+  }
+
+  /** 試験的な 3D 角度を RepMetrics.angle3dBottom に記録するか（設定 AppData.form3d。既定オフ。オフなら計算しない） */
+  setLift3d(on: boolean): void {
+    this.lift3dOn = on
   }
 
   /** 基準を差し替える（待機中の立位から撮影条件が分かり、基準と合うか決まったあとに呼ぶ） */
@@ -590,7 +600,8 @@ export class RepTracker {
       ? judgeWorldTrust(this.key, this.worldBuf.map(w => ({ world: w })), { side: this.side }).trust
       : undefined
     const meas = measureRep(
-      this.key, frames, { startT: rep.startT, minT: fin.minT, endT }, this.stats, rep.lead, { worldTrust },
+      this.key, frames, { startT: rep.startT, minT: fin.minT, endT }, this.stats, rep.lead,
+      { worldTrust, lift3d: this.lift3dOn ? this.lift3dLens : undefined },
     )
     const excluded = meas.metrics.placementOk === false
     // 最下点が推定（欠けを補った・代用した・埋められなかった）のレップは、深さを断定できないので、深さ・可動域に関わる減点をしない

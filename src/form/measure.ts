@@ -10,6 +10,8 @@ import { jointAngle, signedTiltFromVertical, tiltFromVertical } from './geometry
 import { CONFIG, MAIN_JOINTS, MIN_VISIBILITY, SIDE_INDEX, isLegKey } from './rules'
 import type { PlacementLevel } from './placement'
 import type { Joint, Side } from './rules'
+import { lift3dAngle, lift3dSupported } from './lift3d'
+import type { Lift3dLens } from './lift3d'
 
 const RAD = 180 / Math.PI
 
@@ -372,6 +374,26 @@ export interface MeasureOptions {
    * （φ は 2D の比から。速度をメートルに換算しない）。undefined なら信用するとして従来どおり使う
    */
   worldTrust?: boolean
+  /**
+   * 試験的な 3D 角度（lift3d.ts）を記録するときに渡す。立位の骨の長さ（setRefLengths の値）。
+   * 記録だけで、採点・崩れの判定・基準には使わない。渡さなければ計算しない
+   */
+  lift3d?: Lift3dLens
+}
+
+/** 最下点のコマの 3D の内角（度）。実測でない点が含まれる・world が無い・側が分からないときは undefined */
+function bottomAngle3d(key: FormExerciseKey, f: MeasureFrame, lens: Lift3dLens): number | undefined {
+  if (!f.world || !f.side || !f.pts) return undefined
+  const [ja, jb, jc] = MAIN_JOINTS[key]
+  if (f.src && [ja, jb, jc].some((j) => f.src?.[j] !== 'measured')) return undefined
+  const pa = f.pts[ja]
+  const pb = f.pts[jb]
+  const pc = f.pts[jc]
+  const wa = f.world[SIDE_INDEX[f.side][ja]]
+  const wb = f.world[SIDE_INDEX[f.side][jb]]
+  const wc = f.world[SIDE_INDEX[f.side][jc]]
+  if (!pa || !pb || !pc || !wa || !wb || !wc) return undefined
+  return lift3dAngle(pa, pb, pc, lens, wa.z - wb.z, wc.z - wb.z)
 }
 
 /** 設計値・暫定：最下点の前後これだけのコマ数以内に、推定のコマ（主関節の 3 点のどれかが measured でない）があれば、最下点は推定 */
@@ -523,6 +545,18 @@ export function measureRep(
   const bi = frames.indexOf(bottom)
   for (let k = Math.max(0, bi - BOTTOM_NEAR_FRAMES); k <= Math.min(frames.length - 1, bi + BOTTOM_NEAR_FRAMES); k++) {
     if (notMeasuredMain(frames[k])) { metrics.bottomEstimated = true; break }
+  }
+
+  // 試験的な 3D 角度（記録だけ。world を信用できるときだけ）
+  if (opts.lift3d && opts.worldTrust === true && lift3dSupported(key)) {
+    const bi3 = frames.indexOf(bottom)
+    const vals: number[] = []
+    for (let k = Math.max(0, bi3 - 1); k <= Math.min(frames.length - 1, bi3 + 1); k++) {
+      const v = bottomAngle3d(key, frames[k], opts.lift3d)
+      if (v !== undefined) vals.push(v)
+    }
+    const a3 = vals.length ? mean(vals) : undefined
+    if (a3 !== undefined) metrics.angle3dBottom = round(a3, 1)
   }
 
   // 安全に関わる崩れ（hip-rise・lean-back・knee-valgus）は、実測のコマだけから出す（推定のコマの値で断定しない）
