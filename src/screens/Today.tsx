@@ -418,7 +418,7 @@ export default function Today({ data, setData }: ScreenProps) {
         const panel = tool && (
           <div className="tool-panel" id={panelId}>
             {tool === 'warmup' && t && <WarmupPanel ex={ex} target={t} bare />}
-            {tool === 'body' && <BodyMap highlights={exerciseHighlights(ex)} size="sm" label={`${ex.name}で効く筋肉`} />}
+            {tool === 'body' && <BodyMap highlights={exerciseHighlights(ex)} size="sm" mode="role" label={`${ex.name}で効く筋肉`} />}
             {tool === 'substitute' && (
               <SubstitutePanel ex={ex} entry={entry} data={data} bare onReplace={next => replaceExercise(ex, next)} />
             )}

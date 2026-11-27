@@ -1,4 +1,10 @@
 .bodymap { display: flex; flex-direction: column; align-items: center; max-width: 100%; min-width: 0; }
 .bodymap-figures { display: flex; justify-content: center; gap: 16px; max-width: 100%; }
 .bodymap-figures .rbh-wrapper { flex: 0 1 auto; min-width: 0; }
-.bodymap-legend { margin: 4px 0 0; font-size: var(--fs-note); color: var(--muted); text-align: center; }
+.bodymap-legend { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; margin: 4px 0 0; font-size: var(--fs-note); color: var(--muted); text-align: center; }
+.bodymap-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; margin: 0 4px 0 10px; vertical-align: -2px; }
+.bodymap-legend > .bodymap-swatch:first-child { margin-left: 0; }
+.bodymap-ramp { display: inline-flex; margin: 0 4px; }
+.bodymap-ramp .bodymap-swatch { margin: 0; border-radius: 0; }
+.bodymap-ramp .bodymap-swatch:first-child { border-radius: 3px 0 0 3px; }
+.bodymap-ramp .bodymap-swatch:last-child { border-radius: 0 3px 3px 0; }

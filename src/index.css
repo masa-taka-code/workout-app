@@ -29,7 +29,12 @@
   /* グラフ・筋肉マップの色 */
   --data: #1d4ed8;
   --map-body: #d5d9e0;
-  --map-min: 25;
+  --map-l1: #4673de;
+  --map-l2: #2253c3;
+  --map-l3: #183a88;
+  --map-l4: #0c1e46;
+  --map-secondary: #4673de;
+  --map-primary: #0e2763;
   /* 筋肉のバー（達成・不足） */
   --bar-good: #15803d;
   --bar-warn: #b45309;
@@ -117,7 +122,12 @@
     --accent-text: #b3ccff;
     --data: #7fb0ff;
     --map-body: #383f4c;
-    --map-min: 40;
+    --map-l1: #6086e1;
+    --map-l2: #8ea9e9;
+    --map-l3: #c2d0f3;
+    --map-l4: #fafbfe;
+    --map-secondary: #6086e1;
+    --map-primary: #fafbfe;
     --bar-good: #4ccf84;
     --bar-warn: #c97618;
     --select-bg: #465062;

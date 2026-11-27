@@ -137,3 +137,20 @@ describe('映像の上の状態表示（白文字 / --status-*-bg、ライト・
     }
   }
 })
+
+// 筋肉マップの色の差（WCAG 1.4.11 の 3:1、段階どうしは 1.5:1 を目標）
+describe('筋肉マップの色の差', () => {
+  for (const [name, v, step] of [['ライト', light, 1.5], ['ダーク', dark, 1.45]] as const) {
+    it(`${name}: 地 → 補助 → 主働が 3:1 以上`, () => {
+      expect(contrast(v['map-body'], v['map-secondary'])).toBeGreaterThanOrEqual(3)
+      expect(contrast(v['map-secondary'], v['map-primary'])).toBeGreaterThanOrEqual(3)
+    })
+    it(`${name}: 週ボリュームの4段階（地と最小段階 3:1、隣同士 ${step}:1）`, () => {
+      const ramp = ['map-body', 'map-l1', 'map-l2', 'map-l3', 'map-l4']
+      expect(contrast(v[ramp[0]], v[ramp[1]])).toBeGreaterThanOrEqual(3)
+      for (let i = 1; i < ramp.length - 1; i++) {
+        expect(contrast(v[ramp[i]], v[ramp[i + 1]])).toBeGreaterThanOrEqual(step)
+      }
+    })
+  }
+})

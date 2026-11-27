@@ -81,8 +81,8 @@ export default function Analysis({ data }: ScreenProps) {
         ) : (
           <>
           <div className="vol-map">
-            <BodyMap size="md" highlights={volumeHighlights(muscles)} label="今週のセット数" />
-            <p className="muted analysis-note">濃いほど週の目標に近い</p>
+            <BodyMap size="md" showLevelLegend highlights={volumeHighlights(muscles)} label="今週のセット数" />
+            
           </div>
           <MuscleBars items={muscles} weekEnded={false} />
           </>
