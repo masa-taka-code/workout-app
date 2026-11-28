@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AppData, Entry, Exercise, Session } from './types'
 import { BODY_PARTS } from './types'
-import { CATALOG } from './catalog'
+import { CATALOG, catalogToExercise } from './catalog'
 import type { CatalogItem } from './catalog'
 import { defaultData } from './storage'
 import { rotationHint, substitutes } from './substitute'
@@ -127,13 +127,110 @@ describe('CATALOG', () => {
       expect(CATALOG.filter(c => c.part === part).length, part).toBeGreaterThanOrEqual(3)
     }
   })
+  it('全種目に動きの型・多関節・強度・安定性が付き、値が範囲内', () => {
+    for (const c of CATALOG) {
+      expect(c.pattern, c.name).toBeDefined()
+      expect(typeof c.compound, c.name).toBe('boolean')
+      expect([0, 1, 2], c.name).toContain(c.loadability)
+      expect([0, 1, 2], c.name).toContain(c.stability)
+    }
+  })
+  it('カーフレイズは立位（伸張位）、シーテッドカーフレイズは伸張位でない', () => {
+    expect(CATALOG.find(c => c.name === 'カーフレイズ')?.lengthened).toBe(true)
+    expect(CATALOG.find(c => c.name === 'シーテッドカーフレイズ')?.lengthened).toBe(false)
+  })
   it('初期種目10個が同じ設定値で含まれる', () => {
     for (const e of defaultData().exercises) {
       const { id: _id, ...spec } = e
       void _id
-      const { lengthened: _l, ...found } = CATALOG.find(c => c.name === e.name) ?? ({} as CatalogItem)
-      void _l
-      expect(found, e.name).toEqual(spec)
+      const found = CATALOG.find(c => c.name === e.name)
+      expect(found, e.name).toBeDefined()
+      expect(catalogToExercise(found!), e.name).toEqual(spec)
     }
+  })
+})
+
+describe('substitutes（カタログ全体）', () => {
+  const byName = (n: string) => {
+    const item = CATALOG.find(c => c.name === n)!
+    return { id: n, ...catalogToExercise(item) } as Exercise
+  }
+  const names = (n: string, reason?: 'joint' | 'stall', owned: Exercise[] = []) =>
+    substitutes(byName(n), CATALOG, owned, reason).map(x => x.item.name)
+  const rank = (list: string[], a: string, b: string) => list.indexOf(a) >= 0 && (list.indexOf(b) < 0 || list.indexOf(a) < list.indexOf(b))
+
+  it('ベンチプレス：チェストプレスが先頭で、プレス系がフライより上', () => {
+    const r = substitutes(byName('ベンチプレス'), CATALOG, [])
+    const n = r.map(x => x.item.name)
+    expect(n[0]).toBe('チェストプレス')
+    expect(r[0].reason).toBe('同じ水平押しの多関節種目・高重量を扱える')
+    for (const press of ['チェストプレス', 'インクラインダンベルプレス', 'ダンベルベンチプレス']) {
+      for (const fly of ['ケーブルフライ', 'ダンベルフライ']) expect(rank(n, press, fly), `${press}>${fly}`).toBe(true)
+    }
+  })
+
+  it('スクワット：レッグプレス・ハックスクワットがレッグエクステンションより上、デッドリフト系は外れる', () => {
+    const n = names('スクワット')
+    expect(rank(n, 'レッグプレス', 'レッグエクステンション')).toBe(true)
+    expect(rank(n, 'ハックスクワット', 'レッグエクステンション')).toBe(true)
+    expect(n).not.toContain('ルーマニアンデッドリフト')
+    expect(n).not.toContain('デッドリフト')
+  })
+
+  it('ラットプルダウン：懸垂が先頭、ロウ系がプルオーバーより上、デッドリフトは外れる', () => {
+    const n = names('ラットプルダウン')
+    expect(n[0]).toBe('懸垂')
+    expect(rank(n, 'シーテッドロウ', 'プルオーバー')).toBe(true)
+    expect(n).not.toContain('デッドリフト')
+  })
+
+  it('インクラインダンベルカール：カール系3つだけ', () => {
+    expect(names('インクラインダンベルカール').sort()).toEqual(['ケーブルカール', 'ハンマーカール', 'プリーチャーカール'].sort())
+  })
+
+  it('ダンベルフライ：先頭がケーブルフライで、プレス系より上', () => {
+    const n = names('ダンベルフライ')
+    expect(n[0]).toBe('ケーブルフライ')
+    expect(rank(n, 'ケーブルフライ', 'チェストプレス')).toBe(true)
+  })
+
+  it('joint：スクワットはレッグプレスが先頭で「器具が違う」、三頭筋はケーブルプレスダウンが先頭、伸張位は理由に出ない', () => {
+    const sq = substitutes(byName('スクワット'), CATALOG, [], 'joint')
+    expect(sq[0].item.name).toBe('レッグプレス')
+    expect(sq[0].reason).toContain('器具が違う')
+    expect(sq[0].reason).not.toContain('痛み')
+    expect(names('オーバーヘッドエクステンション', 'joint')[0]).toBe('ケーブルプレスダウン')
+    for (const r of substitutes(byName('ベンチプレス'), CATALOG, [], 'joint')) expect(r.reason).not.toContain('伸びた位置で負荷')
+  })
+
+  it('stall：器具の違うカールがハンマーカール（同じダンベル）より上', () => {
+    const r = substitutes(byName('インクラインダンベルカール'), CATALOG, [], 'stall')
+    const n = r.map(x => x.item.name)
+    expect(rank(n, 'プリーチャーカール', 'ハンマーカール')).toBe(true)
+    expect(rank(n, 'ケーブルカール', 'ハンマーカール')).toBe(true)
+    expect(r.find(x => x.item.name === 'プリーチャーカール')?.reason).toContain('器具が違い刺激を変えられる')
+  })
+
+  it('reason なしは undefined と同じ', () => {
+    expect(substitutes(byName('ベンチプレス'), CATALOG, [], undefined)).toEqual(substitutes(byName('ベンチプレス'), CATALOG, []))
+  })
+
+  it('自作種目がカタログと同名なら、カタログの属性を使う', () => {
+    const own: Exercise = { ...mk('チェストプレス', ['胸'], 'own-cp'), secondary: ['上腕三頭筋', '肩前部'], equipment: 'machine' }
+    const n = substitutes(byName('ベンチプレス'), CATALOG, [own]).map(x => x.item.name)
+    expect(n[0]).toBe('チェストプレス')
+  })
+
+  it('型不明の自作種目が元でも落ちずに候補が出る', () => {
+    const custom = mk('オリジナル胸種目', ['胸'])
+    const r = substitutes(custom, CATALOG, [])
+    expect(r.length).toBe(5)
+    expect(r[0].reason).toMatch(/主働筋/)
+  })
+
+  it('最大5件で、自分自身は含まない', () => {
+    const r = names('ベンチプレス')
+    expect(r.length).toBeLessThanOrEqual(5)
+    expect(r).not.toContain('ベンチプレス')
   })
 })

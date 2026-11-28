@@ -19,7 +19,7 @@ interface Props {
 
 export default function SubstitutePanel({ ex, entry, data, onReplace, bare }: Props) {
   const hint = useMemo(() => rotationHint(ex, data, localToday()), [ex, data])
-  const list = useMemo(() => substitutes(ex, CATALOG, data.exercises), [ex, data.exercises])
+  const list = useMemo(() => substitutes(ex, CATALOG, data.exercises, hint?.kind), [ex, data.exercises, hint?.kind])
 
   const replace = (item: Exercise | (typeof list)[number]['item']) => {
     if (doneSets(entry).length > 0 &&
